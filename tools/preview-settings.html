@@ -1,0 +1,297 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>昨日圆车 · 六边形双人战棋</title>
+<meta name="description" content="昨日圆车：六边形双人战棋，回合制、三种兵种、结算随时可用，数值可自定义。" />
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cpolygon points='16,2 29,9.5 29,22.5 16,30 3,22.5 3,9.5' fill='%232dd4bf'/%3E%3C/svg%3E" />
+<link rel="stylesheet" href="../css/style.css" />
+</head>
+<body>
+
+<div id="app">
+
+  <!-- ============ 顶栏 ============ -->
+  <header class="topbar">
+    <div class="brand">
+      <svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true">
+        <polygon points="16,2 29,9.5 29,22.5 16,30 3,22.5 3,9.5" />
+      </svg>
+      <div class="brand-text">
+        <h1>昨日圆车</h1>
+        <span>HEX WAGON</span>
+      </div>
+    </div>
+    <div class="topbar-actions">
+      <span class="turn-chip" id="turnChip">第 1 回合 · 青方</span>
+      <button class="btn ghost" id="btnRules" type="button">规则</button>
+      <button class="btn ghost" id="btnNew" type="button">新对局</button>
+    </div>
+  </header>
+
+  <!-- ============ 主战区 ============ -->
+  <main class="stage">
+    <div class="side side-left">
+      <aside class="panel panel-p0" id="panel-0"></aside>
+      <div class="log-wrap">
+        <div class="log-title">战报</div>
+        <ol class="log" id="log"></ol>
+      </div>
+    </div>
+
+    <section class="board-shell">
+      <canvas id="board"></canvas>
+      <div class="board-toast" id="toast" aria-live="polite"></div>
+      <div class="inspect-card" id="inspect"></div>
+    </section>
+
+    <div class="side side-right">
+      <aside class="panel panel-p1" id="panel-1"></aside>
+      <div class="quick">
+        <h4>速查</h4>
+        <ul>
+          <li>点下方兵种，再点棋盘上<b>虚线格</b>放置</li>
+          <li>每回合 <b>3 点费用</b>（后手青方首回合 4 点），不累积</li>
+          <li><b>结算</b>：回合结束前随时可点，不限次数；攻击之和 ≥ 血量 就死</li>
+          <li>大本营旁的棋子被切断会连带消失</li>
+        </ul>
+        <div class="keys">
+          <span><kbd>1</kbd><kbd>2</kbd><kbd>3</kbd> 选兵种</span>
+          <span><kbd>R</kbd> 结算</span>
+          <span><kbd>空格</kbd> 结束回合</span>
+        </div>
+        <button class="btn ghost btn-mini" id="btnResign" type="button">认输</button>
+      </div>
+    </div>
+  </main>
+
+  <!-- ============ 底部操作区 ============ -->
+  <footer class="dock">
+    <div class="shop" id="shop"></div>
+    <div class="dock-actions">
+      <button class="btn primary" id="btnResolve" type="button">结算</button>
+      <button class="btn" id="btnEnd" type="button">结束回合</button>
+    </div>
+  </footer>
+
+</div>
+
+<!-- ============ 开始菜单 ============ -->
+<div class="overlay" id="ovMenu">
+  <div class="modal menu">
+    <svg class="menu-mark" viewBox="0 0 32 32" aria-hidden="true">
+      <polygon points="16,2 29,9.5 29,22.5 16,30 3,22.5 3,9.5" />
+    </svg>
+    <h1 class="menu-title">昨日圆车</h1>
+    <p class="menu-sub">六边形双人战棋 · 回合制 · 同屏对战</p>
+
+    <div class="mode-list">
+      <button class="mode" id="btnModeLocal" type="button">
+        <b>本地双人</b>
+        <span>同一台设备轮流操作</span>
+      </button>
+      <button class="mode" id="btnModeAI" type="button">
+        <b>单人 · 对战 AI</b>
+        <span>你执先手，电脑接招</span>
+      </button>
+      <button class="mode" id="btnModeOnline" type="button">
+        <b>联机对战</b>
+        <span>建房、发房号、实时对下</span>
+      </button>
+    </div>
+    <button class="btn ghost menu-continue" id="btnResume" type="button" style="display:none">继续当前对局</button>
+
+    <div class="menu-row">
+      <button class="btn" id="btnOpenSettings" type="button">设置</button>
+      <button class="btn ghost" id="btnRules2" type="button">规则</button>
+    </div>
+
+    <div class="menu-summary" id="menuSummary"></div>
+
+    <p class="tip">
+      同屏双人：两人轮流用同一台设备操作。<br />
+      选兵种 → 点棋盘上闪烁的格子放置 → 要动手时点「结算」→「结束回合」。<br />
+      快捷键：<b>1 / 2 / 3</b> 选兵种，<b>R</b> 结算，<b>空格</b> 结束回合。
+    </p>
+  </div>
+</div>
+
+<!-- ============ 联机 ============ -->
+<div class="overlay hidden" id="ovOnline">
+  <div class="modal">
+    <h1 class="modal-title" style="font-size:22px">联机对战</h1>
+    <p class="modal-sub">两人实时对下，服务端裁定，改不了数值</p>
+
+    <div class="onl-status" id="onlStatus">正在连接服务器…</div>
+
+    <div id="onlChooser">
+      <button class="btn primary big" id="btnCreateRoom" type="button">创建房间</button>
+      <div class="join-row">
+        <input id="inpCode" class="code-input" type="text" inputmode="numeric" maxlength="4"
+               placeholder="4 位房号" autocomplete="off" />
+        <button class="btn" id="btnJoinRoom" type="button">加入</button>
+      </div>
+      <p class="tip">房号由先建房的人生成；加入后两人同时在线就自动开局。</p>
+    </div>
+
+    <div id="onlRoom" class="hidden">
+      <div class="code-big" id="roomCode">----</div>
+      <p class="room-hint" id="roomHint">把房号发给朋友；两人都在线后自动开局</p>
+    </div>
+
+    <div class="modal-actions">
+      <button class="btn ghost" id="btnOnlineBack" type="button">返回</button>
+    </div>
+  </div>
+</div>
+<!-- ============ 设置 ============ -->
+<div class="overlay hidden" id="ovSettings">
+  <div class="modal wide">
+    <h1 class="modal-title" style="font-size:22px">设置</h1>
+    <p class="modal-sub">改完立刻生效，会自动记住（下次打开还是这套）</p>
+
+    <div class="set-group">
+      <h3>地图</h3>
+      <div class="set-row">
+        <label for="setSide">边长</label>
+        <input id="setSide" class="num" type="number" data-path="side" min="3" max="8" step="1" inputmode="numeric" />
+        <span class="unit" id="setSideHint">61 格</span>
+      </div>
+      <div class="set-row stack">
+        <label>障碍密度</label>
+        <div class="seg" id="setDensity">
+          <button type="button" data-d="0">无</button>
+          <button type="button" data-d="0.08">低</button>
+          <button type="button" data-d="0.14">中</button>
+          <button type="button" data-d="0.22">高</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="set-group">
+      <h3>回合与费用</h3>
+      <div class="set-row">
+        <label for="setEnergy">每回合费用</label>
+        <input id="setEnergy" class="num" type="number" data-path="energy" min="1" max="9" step="1" inputmode="numeric" />
+        <span class="unit">点</span>
+      </div>
+      <div class="set-row stack">
+        <label>先手方</label>
+        <div class="seg" id="setFirst">
+          <button type="button" data-p="0">青方先手</button>
+          <button type="button" data-p="1">赤方先手</button>
+        </div>
+      </div>
+      <div class="set-row">
+        <label for="setBonus">后手补偿</label>
+        <input id="setBonus" class="num" type="number" data-path="lastBonus" min="0" max="8" step="1" inputmode="numeric" />
+        <span class="unit">点</span>
+      </div>
+      <p class="set-note" id="setEnergyHint"></p>
+    </div>
+
+    <div class="set-group">
+      <h3>大本营</h3>
+      <div class="set-row">
+        <label for="setBaseHp">血量</label>
+        <input id="setBaseHp" class="num" type="number" data-path="baseHp" min="1" max="20" step="1" inputmode="numeric" />
+        <span class="unit" id="setBaseHint"></span>
+      </div>
+    </div>
+
+    <div class="set-group">
+      <h3>兵种</h3>
+      <table class="set-table">
+        <thead>
+          <tr><th>兵种</th><th>血量</th><th>攻击</th><th>射程</th><th>费用</th></tr>
+        </thead>
+        <tbody id="setUnitRows"></tbody>
+      </table>
+      <p class="set-note">血量 ≤ 攻击合计 就会被结算打死；费用最低 1 点，射程 0 表示不能攻击。</p>
+    </div>
+
+    <div class="modal-actions">
+      <button class="btn ghost" id="btnSetReset" type="button">恢复默认</button>
+      <button class="btn primary" id="btnSetDone" type="button">完成</button>
+    </div>
+  </div>
+</div>
+<!-- ============ 规则 ============ -->
+<div class="overlay hidden" id="ovRules">
+  <div class="modal wide">
+    <h1 class="modal-title" style="font-size:22px">规则</h1>
+    <div class="rules">
+      <h3>目标</h3>
+      <p>摧毁对方大本营。双方大本营固定在地图上下两个顶点，各有 <b>4 点血量</b>（血量、兵种数值、费用都能在<b>设置</b>里改）。</p>
+
+      <h3>回合</h3>
+      <p><b>赤方（红，地图下方）先手</b>，轮流行动。每个回合获得 <b>3 点费用</b>，费用<b>不累积</b>，回合结束时清零。<br />后手补偿：青方的<b>第一个回合有 4 点费用</b>（赤方首回合 3 点），之后双方都是 3 点。<br />先手方、每回合费用、后手补偿点数都可以在<b>设置</b>里改。</p>
+
+      <h3>放置</h3>
+      <p>棋子只能放在「<b>己方与大本营连通的那一片棋子</b>」紧邻的空格上，不能放在障碍或已有棋子上。
+        开局只有大本营，所以第一回合只能放在大本营周围的 3 个格子上。</p>
+
+      <h3>兵种</h3>
+      <div class="kv">
+        <div><b>步兵 · 1 费</b><span>血 3 · 攻 1 · 射程 1<br />便宜的前排，用来铺路占格。</span></div>
+        <div><b>坦克 · 2 费</b><span>血 4 · 攻 1 · 射程 1<br />多 1 血，要 4 点攻击才会倒。</span></div>
+        <div><b>炮兵 · 2 费</b><span>血 3 · 攻 1 · 射程 2<br />隔着前排输出，也是拆家关键。</span></div>
+      </div>
+
+      <h3>结算（回合结束前随时可用，不限次数）</h3>
+      <ul>
+        <li>对场上<b>每一个</b>棋子（含大本营），把所有能打到它的敌方棋子的攻击力加起来；
+          如果它的<b>血量小于等于</b>这个总和（<b>血量 ≤ 攻击之和</b>），它就<b>死亡</b>。</li>
+        <li>所有死亡<b>同时判定</b>：计算时用的是结算前的局面，所以双方可能同时损失棋子。</li>
+        <li>死亡处理完后，双方各自移除<b>与大本营失去连接</b>的棋子（断联的棋子直接消失）。</li>
+        <li>大本营同样参与这个判定，所以<b>凑够 4 点攻击</b>就能拆掉它；每个棋子受击时，棋盘上会飘出「已造成/需要」的数字，例如 <b>3/4</b> 表示已吃 3 点、离致死还差 1 点。</li>
+        <li>结算<b>不结束回合、不消耗费用</b>，回合结束前想结算几次都可以；局面没变时重复结算不会有新结果。</li>
+      </ul>
+
+      <h3>地图</h3>
+      <p>障碍物随机生成，且<b>上下镜像对称</b>，保证双方地形完全一致。大本营及其周围一圈永远不会有障碍。</p>
+
+      <h3>操作</h3>
+      <p>点击下方兵种卡选择棋子，再点棋盘上闪烁的格子放置；点「结算」执行判定，点「结束回合」交给对手。
+        鼠标停在棋子上可以看到它的射程范围。</p>
+
+      <div class="note">
+        伤害是「一次性判定」，不会累积掉血 —— 一个 3 血步兵同时吃到 3 点攻击就会死（血量 ≤ 攻击之和）；
+        只吃到 2 点则完全没事，下一回合重新计算。想让战斗更耐打，可以把规则改成「累积伤害」。
+      </div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn primary" id="btnCloseRules" type="button">明白了</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============ 结算 ============ -->
+<div class="overlay hidden" id="ovOver">
+  <div class="modal" style="width:min(440px,100%)">
+    <h1 class="over-title" id="overTitle">胜利</h1>
+    <p class="over-sub" id="overSub"></p>
+    <div class="over-actions">
+      <button class="btn primary" id="btnAgain" type="button">再来一局</button>
+      <button class="btn ghost" id="btnSettings" type="button">改设置</button>
+    </div>
+  </div>
+</div>
+
+<script src="../js/hex.js"></script>
+<script src="../js/engine.js"></script>
+<script src="../js/ai.js"></script>
+<script src="../js/net.js"></script>
+<script src="../js/renderer.js"></script>
+<script src="../js/main.js"></script>
+<script>
+
+window.addEventListener('load', function () {
+  document.getElementById('btnOpenSettings').click();
+  console.log('settings open');
+});
+
+</script>
+</body>
+</html>

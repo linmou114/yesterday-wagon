@@ -1,0 +1,17 @@
+{
+  "name": "yesterday-wagon",
+  "version": "1.0.0",
+  "private": true,
+  "description": "昨日圆车 —— 六边形双人回合战棋（本地双人 / 单人 AI / 联机对战）",
+  "main": "server/server.js",
+  "scripts": {
+    "start": "node server/server.js",
+    "test": "node tools/selftest.js && node tools/aitest.js && node tools/nettest.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "ws": "^8.18.0"
+  }
+}

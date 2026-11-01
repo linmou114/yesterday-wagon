@@ -1,0 +1,15 @@
+# Render 部署配置（Blueprint 方式）
+# 用法：把仓库推到 GitHub → Render 控制台 New → Blueprint → 选这个仓库
+# Render 会读这个文件自动建服务，不需要手填构建命令
+services:
+  - type: web
+    name: yesterday-wagon
+    runtime: node
+    plan: free
+    region: singapore          # 离国内最近；也可以换 oregon / frankfurt
+    buildCommand: npm install
+    startCommand: node server/server.js
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_VERSION
+        value: "20"

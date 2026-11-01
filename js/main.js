@@ -1,0 +1,1084 @@
+/* =========================================================
+ * main.js —— 界面与交互
+ * ========================================================= */
+(function () {
+  'use strict';
+
+  var ENGINE = window.ENGINE;
+  var Hex = window.Hex;
+  var $ = function (id) { return document.getElementById(id); };
+
+  var app = {
+    game: null,
+    renderer: null,
+    mode: 'local',          // 'local' | 'ai' | 'online'
+    mySeat: 0,              // 联机时自己坐哪
+    humanSeat: 0,           // 单人时人坐哪
+    aiSeat: 1,
+    aiTimer: null,
+    online: { code: null, seat: -1, seats: [false, false] },
+    selected: 'infantry',
+    legal: new Set(),
+    hover: null,
+    inspect: null,
+    effects: [],
+    settings: null
+  };
+
+  var els = {};
+  var toastTimer = null;
+
+  // 当前对局的兵种表与规则（没有对局时用默认值）
+  function typesOf() { return (app.game && app.game.types) || ENGINE.TYPES; }
+  function rulesOf() { return (app.game && app.game.rules) || ENGINE.DEFAULT_RULES; }
+
+  /* ---------------- 启动 ---------------- */
+
+  function boot() {
+    app.settings = loadSettings();
+    els.canvas = $('board');
+    els.shop = $('shop');
+    els.log = $('log');
+    els.toast = $('toast');
+    els.inspectCard = $('inspect');
+    els.turnChip = $('turnChip');
+    els.btnResolve = $('btnResolve');
+    els.btnEnd = $('btnEnd');
+    els.setUnitRows = $('setUnitRows');
+    els.overTitle = $('overTitle');
+    els.overSub = $('overSub');
+
+    app.renderer = new Renderer(els.canvas);
+    app.renderer.start(function () {
+      var g = app.game;
+      return {
+        legal: app.legal,
+        selected: app.selected,
+        hover: app.hover,
+        inspect: app.inspect,
+        effects: app.effects,
+        canAfford: !!g && selectedAffordable()
+      };
+    });
+
+    renderUnitRows();
+    bindEvents();
+    syncSettingsForm();
+    updateMenuSummary();
+    showOverlay('ovMenu');
+  }
+
+  function selectedAffordable() {
+    var g = app.game;
+    if (!g || g.over) return false;
+    var t = typesOf()[app.selected];
+    return !!t && g.energy >= t.cost;
+  }
+
+  /* ---------------- 设置 ---------------- */
+
+  var STORE_KEY = 'yesterday-bus.settings.v1';
+
+  function defaultSettings() {
+    return {
+      side: 5,
+      density: 0.14,
+      energy: ENGINE.DEFAULT_RULES.energyPerTurn,
+      firstPlayer: ENGINE.DEFAULT_RULES.firstPlayer,
+      lastBonus: 1,
+      baseHp: ENGINE.DEFAULT_RULES.baseHp,
+      types: {
+        infantry: cloneType(ENGINE.TYPES.infantry),
+        tank: cloneType(ENGINE.TYPES.tank),
+        artillery: cloneType(ENGINE.TYPES.artillery)
+      }
+    };
+  }
+
+  function cloneType(t) {
+    return { hp: t.hp, atk: t.atk, range: t.range, cost: t.cost };
+  }
+
+  function clampNum(v, min, max, fallback) {
+    var n = Number(v);
+    if (!isFinite(n)) return fallback;
+    return Math.min(max, Math.max(min, n));
+  }
+
+  function clampInt(v, min, max, fallback) {
+    return Math.round(clampNum(v, min, max, fallback));
+  }
+
+  // 把设置修正到合法范围（开局前跑一次，避免手输奇怪的值）
+  function sanitizeSettings() {
+    var s = app.settings;
+    s.side = clampInt(s.side, 3, 8, 5);
+    s.density = clampNum(s.density, 0, 0.4, 0.14);
+    s.energy = clampInt(s.energy, 1, 9, 3);
+    s.firstPlayer = Number(s.firstPlayer) === 1 ? 1 : 0;
+    s.lastBonus = clampInt(s.lastBonus, 0, 8, 1);
+    s.baseHp = clampInt(s.baseHp, 1, 20, 4);
+    ENGINE.TYPE_LIST.forEach(function (id) {
+      if (!s.types[id]) s.types[id] = cloneType(ENGINE.TYPES[id]);
+      var t = s.types[id];
+      t.hp = clampInt(t.hp, 1, 30, ENGINE.TYPES[id].hp);
+      t.atk = clampInt(t.atk, 0, 20, ENGINE.TYPES[id].atk);
+      t.range = clampInt(t.range, 0, 6, ENGINE.TYPES[id].range);
+      t.cost = clampInt(t.cost, 1, 30, ENGINE.TYPES[id].cost);
+    });
+    return s;
+  }
+
+  // 设置 -> 单局规则
+  function rulesFromSettings() {
+    var s = sanitizeSettings();
+    var fe = [s.energy, s.energy];
+    fe[1 - s.firstPlayer] = s.energy + s.lastBonus;
+    return {
+      baseHp: s.baseHp,
+      energyPerTurn: s.energy,
+      firstPlayer: s.firstPlayer,
+      firstTurnEnergy: fe
+    };
+  }
+
+  function loadSettings() {
+    var base = defaultSettings();
+    var raw = null;
+    try { raw = window.localStorage.getItem(STORE_KEY); } catch (e) { raw = null; }
+    if (!raw) return base;
+    var saved = null;
+    try { saved = JSON.parse(raw); } catch (e) { saved = null; }
+    if (!saved || typeof saved !== 'object') return base;
+    ['side', 'density', 'energy', 'firstPlayer', 'lastBonus', 'baseHp'].forEach(function (k) {
+      if (saved[k] !== undefined) base[k] = saved[k];
+    });
+    ENGINE.TYPE_LIST.forEach(function (id) {
+      var st = saved.types && saved.types[id];
+      if (!st) return;
+      ['hp', 'atk', 'range', 'cost'].forEach(function (f) {
+        if (st[f] !== undefined) base.types[id][f] = st[f];
+      });
+    });
+    return base;
+  }
+
+  function saveSettings() {
+    try { window.localStorage.setItem(STORE_KEY, JSON.stringify(app.settings)); } catch (e) {}
+  }
+
+  function setPath(obj, path, value) {
+    var parts = path.split('.');
+    var cur = obj;
+    for (var i = 0; i < parts.length - 1; i++) {
+      if (!cur[parts[i]]) cur[parts[i]] = {};
+      cur = cur[parts[i]];
+    }
+    cur[parts[parts.length - 1]] = value;
+  }
+
+  function getPath(obj, path) {
+    var parts = path.split('.');
+    var cur = obj;
+    for (var i = 0; i < parts.length; i++) {
+      if (cur == null) return undefined;
+      cur = cur[parts[i]];
+    }
+    return cur;
+  }
+
+  /* ---------------- 开局 ---------------- */
+
+  function startGame(mode) {
+    app.mode = mode || app.mode || 'local';
+    if (app.mode === 'online') return;   // 联机由服务端开局
+
+    var seed = Math.floor(Math.random() * 1e9) >>> 0;
+    var rng = ENGINE.mulberry32(seed);
+    var rules = rulesFromSettings();
+    app.game = new ENGINE.Game({
+      side: app.settings.side,
+      density: app.settings.density,
+      seed: seed,
+      rng: rng,
+      rules: rules,
+      types: app.settings.types
+    });
+
+    // 单人模式：人执先手方，AI 执后手方
+    if (app.mode === 'ai') {
+      app.humanSeat = app.game.firstPlayer;
+      app.aiSeat = 1 - app.game.firstPlayer;
+    }
+
+    app.selected = 'infantry';
+    app.hover = null;
+    app.inspect = null;
+    app.effects.length = 0;
+    app.stuckStamp = null;
+
+    els.log.innerHTML = '';
+    app.renderer.setGame(app.game);
+    hideOverlay('ovMenu');
+    hideOverlay('ovSettings');
+    hideOverlay('ovOver');
+    hideOverlay('ovRules');
+    hideOverlay('ovOnline');
+
+    var g = app.game;
+    addLog('模式：' + (app.mode === 'ai' ? '单人 · 对战 AI（你执' + g.players[app.humanSeat].name + '）' : '本地双人'), 'sys');
+    addLog('地图边长 ' + g.side + '（' + g.board.count + ' 格 / ' + g.board.obstacles + ' 处障碍）', 'sys');
+    addLog('先手：' + g.players[g.firstPlayer].name +
+      '（' + g.rules.firstTurnEnergy[g.firstPlayer] + ' 点）· 后手：' +
+      g.players[1 - g.firstPlayer].name +
+      '（' + g.rules.firstTurnEnergy[1 - g.firstPlayer] + ' 点）· 之后每回合 ' +
+      g.rules.energyPerTurn + ' 点', 'sys');
+    addLog('第 1 回合 · ' + g.players[g.active].name + ' 行动', 'turn');
+    refresh();
+    maybeAITurn();
+  }
+
+  /* ---------------- 刷新界面 ---------------- */
+
+  function refresh() {
+    var g = app.game;
+    if (!g) return;
+    app.legal = g.over ? new Set() : g.legalCells(g.active);
+    renderPanels();
+    renderShop();
+    renderButtons();
+    updateInspectCard();
+
+    // 被完全堵死时提醒一下，别让人干坐着
+    var stamp = g.turn + ':' + g.active;
+    if (!g.over && app.legal.size === 0 && app.stuckStamp !== stamp) {
+      app.stuckStamp = stamp;
+      toast('没有可放置的格子了，点「结束回合」交给对手');
+    }
+  }
+
+  function renderPanels() {
+    var g = app.game;
+    for (var i = 0; i < 2; i++) {
+      var el = $('panel-' + i);
+      if (!el) continue;
+      var st = g.stats(i);
+      var active = !g.over && g.active === i;
+      var energy = active ? g.energy : 0;
+      var maxEnergy = active ? (g.turnEnergyMax || g.rules.energyPerTurn) : g.rules.energyPerTurn;
+      var pips = '';
+      for (var k = 0; k < maxEnergy; k++) {
+        pips += '<i class="pip' + (k < energy ? ' on' : '') + '"></i>';
+      }
+
+      // 兵种编成
+      var counts = { infantry: 0, tank: 0, artillery: 0 };
+      g.pieces.forEach(function (p) {
+        if (p.owner === i && counts[p.kind] != null) counts[p.kind] += 1;
+      });
+      var comp = '<div class="comp">' +
+        '<span><i>步</i>' + counts.infantry + '</span>' +
+        '<span><i>坦</i>' + counts.tank + '</span>' +
+        '<span><i>炮</i>' + counts.artillery + '</span>' +
+        '</div>';
+
+      var stateText = g.over
+        ? (g.winner === -1 ? '平局' : (g.winner === i ? '胜利' : '失败'))
+        : (active ? '行动中' : '等待中');
+      el.className = 'panel panel-p' + i + (active ? ' active' : '') +
+        (g.over && g.winner === i ? ' winner' : '');
+
+      el.innerHTML =
+        '<div class="panel-head">' +
+          '<span class="dot"></span>' +
+          '<div class="who"><b>' + g.players[i].name + '</b><span>' + (i === g.firstPlayer ? '先手' : '后手') + '</span></div>' +
+        '</div>' +
+        '<div class="panel-body">' +
+          '<div class="stat"><span>大本营</span><b>' + (st.baseAlive ? st.baseHp + ' / ' + g.rules.baseHp : '已摧毁') + '</b></div>' +
+          '<div class="stat"><span>本回合费用</span><b class="energy">' + (active ? energy + ' / ' + maxEnergy : '—') + '</b></div>' +
+          '<div class="stat"><span>棋子数</span><b>' + st.units + '</b></div>' +
+          '<div class="stat"><span>战果</span><b>' + st.kills + ' 杀 · ' + st.lost + ' 损</b></div>' +
+          '<div class="pips">' + pips + '</div>' +
+          comp +
+        '</div>' +
+        '<div class="panel-state">' + stateText + '</div>';
+    }
+  }
+
+  function renderShop() {
+    var g = app.game;
+    var html = '';
+    ENGINE.TYPE_LIST.forEach(function (id, idx) {
+      var t = typesOf()[id];
+      var afford = g.energy >= t.cost && !g.over;
+      html += '<button type="button" class="card' + (app.selected === id ? ' sel' : '') +
+        (afford ? '' : ' poor') + '" data-type="' + id + '">' +
+        '<span class="card-key">' + (idx + 1) + '</span>' +
+        '<span class="card-name">' + t.name + '</span>' +
+        '<span class="card-cost">' + t.cost + ' 费</span>' +
+        '<span class="card-line">血 ' + t.hp + ' · 攻 ' + t.atk + ' · 射 ' + t.range + '</span>' +
+        '</button>';
+    });
+    els.shop.innerHTML = html;
+  }
+
+  function renderButtons() {
+    var g = app.game;
+    els.btnResolve.disabled = !g || g.over;
+    els.btnResolve.textContent = '结算';
+    els.btnResolve.title = g && !g.over
+      ? '回合结束前可以反复结算（本回合已结算 ' + (g.resolveCount || 0) + ' 次）'
+      : '';
+    els.btnEnd.disabled = !g || g.over;
+    els.turnChip.textContent = g ? ('第 ' + g.turn + ' 回合 · ' + g.players[g.active].name) : '—';
+  }
+
+  function updateInspectCard() {
+    var g = app.game;
+    var el = els.inspectCard;
+    if (!g || !el) return;
+    var cell = app.hover || app.inspect;
+    var p = cell ? g.pieceAt(cell.key) : null;
+    if (!p) { el.classList.remove('show'); return; }
+
+    var isBase = p.kind === 'base';
+    var t = isBase
+      ? { glyph: '基', name: '大本营', desc: '血量 4。被敌方攻击合计满 4 点就会被摧毁。' }
+      : typesOf()[p.kind];
+    el.innerHTML =
+      '<div class="ic-row">' +
+        '<span class="ic-glyph" style="color:' + g.players[p.owner].color + '">' + t.glyph + '</span>' +
+        '<span class="ic-who"><b>' + g.players[p.owner].name + ' · ' + t.name + '</b>' +
+        '<em>' + (isBase ? '基地' : ('血量 ' + p.hp + ' · 攻击 ' + p.atk + ' · 射程 ' + p.range)) + '</em></span>' +
+      '</div>' +
+      '<p class="ic-desc">' + (t.desc || '') + '</p>';
+    el.classList.add('show');
+  }
+
+  /* ---------------- 模式与回合控制 ---------------- */
+
+  function isMyTurn() {
+    var g = app.game;
+    if (!g || g.over) return false;
+    if (app.mode === 'online') return g.active === app.mySeat;
+    if (app.mode === 'ai') return g.active === app.humanSeat;
+    return true;
+  }
+
+  function clearAITimer() {
+    if (app.aiTimer) { clearTimeout(app.aiTimer); app.aiTimer = null; }
+  }
+
+  function maybeAITurn() {
+    clearAITimer();
+    if (app.mode !== 'ai' || !app.game || app.game.over) return;
+    if (app.game.active !== app.aiSeat) return;
+    app.aiTimer = setTimeout(aiStep, 500);
+  }
+
+  // AI 一次只做一件事，这样每一步都看得见
+  function aiStep() {
+    app.aiTimer = null;
+    var g = app.game;
+    if (app.mode !== 'ai' || !g || g.over || g.active !== app.aiSeat) return;
+
+    if (g.energy > 0 && window.AI) {
+      var mv = window.AI.chooseMove(g);
+      if (mv) {
+        var t = g.types[mv.type];
+        if (t && g.energy >= t.cost) {
+          try {
+            g.place(g.active, mv.type, mv.cell);
+            addLog(g.players[g.active].name + ' 部署 ' + t.name, 'place');
+            refresh();
+            app.aiTimer = setTimeout(aiStep, 320);
+            return;
+          } catch (e) { /* 落子失败就走下一步 */ }
+        }
+      }
+    }
+
+    if (window.AI && window.AI.shouldResolve(g)) {
+      var res;
+      try { res = g.resolve(); } catch (e) { res = null; }
+      if (res) {
+        renderResolveResult(res);
+        refresh();
+        if (g.over) { setTimeout(showGameOver, 620); return; }
+        app.aiTimer = setTimeout(aiStep, 460);
+        return;
+      }
+    }
+
+    applyEndTurn();
+  }
+
+  /* ---------------- 操作 ---------------- */
+
+  function handleCellClick(cell) {
+    var g = app.game;
+    if (!g || g.over) return;
+
+    if (g.pieceAt(cell.key)) {
+      app.inspect = (app.inspect && app.inspect.key === cell.key) ? null : cell;
+      updateInspectCard();
+      return;
+    }
+    if (!isMyTurn()) { toast('还没轮到你'); return; }
+    var t = typesOf()[app.selected];
+    if (!t) return;
+    if (g.energy < t.cost) { toast('费用不足，结束回合后会恢复到 ' + g.rules.energyPerTurn + ' 点'); return; }
+    var check = g.canPlace(g.active, app.selected, cell.key);
+    if (!check.ok) { toast(check.msg); return; }
+
+    if (app.mode === 'online') {
+      Net.act({ kind: 'place', type: app.selected, cell: cell.key });
+      return;                                   // 等服务端广播新状态
+    }
+
+    g.place(g.active, app.selected, cell.key);
+    app.inspect = null;
+    addLog(g.players[g.active].name + ' 部署 ' + t.name, 'place');
+    refresh();
+  }
+
+  function doResolve() {
+    var g = app.game;
+    if (!g || g.over) return;
+    if (!isMyTurn()) { toast('还没轮到你'); return; }
+
+    if (app.mode === 'online') {
+      Net.act({ kind: 'resolve' });
+      return;
+    }
+
+    var res;
+    try { res = g.resolve(); } catch (err) { toast(err.message); return; }
+    if (!res) return;
+    renderResolveResult(res);
+    refresh();
+    if (g.over) setTimeout(showGameOver, 620);
+  }
+
+  // 结算表现：飘字 + 战报 + 提示（单机/联机共用）
+  function renderResolveResult(res) {
+    var g = app.game;
+    var survivors = [];
+    res.damage.forEach(function (dmg, id) {
+      if (dmg <= 0) return;
+      var p = g.pieces.get(id);
+      if (!p) return;
+      survivors.push({ piece: p, dmg: dmg });
+    });
+
+    var now = performance.now();
+    res.killedByDamage.forEach(function (r) {
+      var c = Hex.parse(r.piece.key);
+      app.effects.push({ q: c.q, r: c.r, text: '✖', color: '#fda4af', born: now, life: 1100 });
+      app.effects.push({ q: c.q, r: c.r, text: '-' + r.damage, color: '#fee2e2', born: now + 90, life: 900 });
+    });
+    res.removedByCut.forEach(function (r) {
+      var c = Hex.parse(r.piece.key);
+      app.effects.push({ q: c.q, r: c.r, text: '断', color: '#94a3b8', born: now, life: 1100 });
+    });
+    survivors.forEach(function (sv, i) {
+      var c = Hex.parse(sv.piece.key);
+      app.effects.push({
+        q: c.q, r: c.r,
+        text: sv.dmg + '/' + sv.piece.hp,
+        color: '#fcd34d',
+        lift: 0.55,
+        born: now + 60 + i * 30,
+        life: 1400
+      });
+    });
+
+    logResolve(res);
+
+    if (res.over) return;
+
+    var unitKills = res.killedByDamage.filter(function (r) { return r.piece.kind !== 'base'; }).length;
+    var bases = res.killedByDamage.filter(function (r) { return r.piece.kind === 'base'; }).length;
+    var cuts = res.removedByCut.length;
+    if (bases) toast('大本营被摧毁！');
+    else if (unitKills || cuts) {
+      toast('结算：' + [unitKills ? '击杀 ' + unitKills : '', cuts ? '断联 ' + cuts : '']
+        .filter(Boolean).join('，'));
+    } else if (survivors.length) {
+      toast('结算：' + survivors.length + ' 个棋子被攻击，都没到致死线');
+    } else {
+      toast('结算：没有棋子被攻击到');
+    }
+  }
+  function labelOf(p) {
+    var g = app.game;
+    var name = g.players[p.owner].name;
+    if (p.kind === 'base') return name + '大本营';
+    var t = typesOf()[p.kind];
+    return name + (t ? t.name : '棋子');
+  }
+
+  function logResolve(res) {
+    var g = app.game;
+    var who = g.players[res.active].name;
+
+    var survivors = [];
+    res.damage.forEach(function (dmg, id) {
+      if (dmg <= 0) return;
+      var p = g.pieces.get(id);
+      if (!p) return;
+      survivors.push({ piece: p, dmg: dmg });
+    });
+
+    var unitKills = res.killedByDamage.filter(function (r) { return r.piece.kind !== 'base'; }).length;
+    var baseKills = res.killedByDamage.filter(function (r) { return r.piece.kind === 'base'; }).length;
+    var head = [];
+    if (unitKills) head.push('击杀 ' + unitKills + ' 个');
+    if (res.removedByCut.length) head.push('断联 ' + res.removedByCut.length + ' 个');
+    if (baseKills) head.push('摧毁大本营');
+    if (!head.length) head.push('无阵亡');
+
+    addLog(who + ' 结算' + (res.resolveCount > 1 ? '（本回合第 ' + res.resolveCount + ' 次）' : '') +
+      ' · ' + head.join('，'), 'resolve');
+
+    res.killedByDamage.forEach(function (r) {
+      if (r.piece.kind === 'base') {
+        addLog('　↳ ' + labelOf(r.piece) + ' 被摧毁（受 ' + r.damage + ' 点 / 血 ' + r.piece.hp + '）', 'big');
+      } else {
+        addLog('　↳ ' + labelOf(r.piece) + ' 阵亡（受 ' + r.damage + ' 点 / 血 ' + r.piece.hp + '）', 'detail');
+      }
+    });
+    if (res.removedByCut.length) {
+      addLog('　↳ ' + res.removedByCut.map(function (r) { return labelOf(r.piece); }).join('、') +
+        ' 断联移除', 'detail');
+    }
+    survivors.slice(0, 6).forEach(function (sv) {
+      addLog('　↳ ' + labelOf(sv.piece) + ' 受 ' + sv.dmg + ' 点 / 需 ' + sv.piece.hp + ' 点，存活', 'detail');
+    });
+    if (survivors.length > 6) {
+      addLog('　↳ 另有 ' + (survivors.length - 6) + ' 个棋子受击但存活', 'detail');
+    }
+  }
+  // 真正的换手（不做权限判断，AI 也走这里）
+  function applyEndTurn() {
+    var g = app.game;
+    if (!g || g.over) return;
+    var spent = (g.turnEnergyMax || g.rules.energyPerTurn) - g.energy;
+    g.endTurn();
+    app.hover = null;
+    app.inspect = null;
+    if (spent === 0) addLog('（' + g.players[1 - g.active].name + ' 未花费用就结束了回合）', 'sys');
+    addLog('第 ' + g.turn + ' 回合 · ' + g.players[g.active].name + ' 行动', 'turn');
+    refresh();
+    maybeAITurn();
+  }
+
+  function endTurn() {
+    var g = app.game;
+    if (!g || g.over) return;
+    if (!isMyTurn()) { toast('还没轮到你'); return; }
+    if (app.mode === 'online') {
+      Net.act({ kind: 'end' });
+      return;
+    }
+    applyEndTurn();
+  }
+
+  function resign() {
+    var g = app.game;
+    if (!g || g.over) return;
+    if (!isMyTurn()) { toast('还没轮到你'); return; }
+    var who = g.players[g.active].name;
+    if (!window.confirm(who + ' 确定认输？对手将直接获胜。')) return;
+
+    if (app.mode === 'online') {
+      Net.act({ kind: 'resign' });
+      return;
+    }
+
+    clearAITimer();
+    g.over = true;
+    g.winner = 1 - g.active;
+    addLog(who + ' 认输', 'big');
+    refresh();
+    showGameOver();
+  }
+
+  /* ---------------- 联机 ---------------- */
+
+  function openOnline() {
+    app.online.started = false;
+    app.online.code = null;
+    app.online.seat = -1;
+    $('onlChooser').classList.remove('hidden');
+    $('onlRoom').classList.add('hidden');
+    $('onlStatus').textContent = '正在连接服务器…';
+    $('onlStatus').className = 'onl-status';
+    showOverlay('ovOnline');
+
+    Net.start({
+      status: onNetStatus,
+      room: onNetRoom,
+      state: onNetState,
+      peer: onNetPeer,
+      error: onNetError
+    });
+  }
+
+  function onNetStatus(st) {
+    var el = $('onlStatus');
+    if (!el) return;
+    el.textContent = st.text;
+    el.className = 'onl-status' + (st.ok === true ? ' ok' : (st.ok === false ? ' bad' : ''));
+  }
+
+  function onNetRoom(msg) {
+    app.online.code = msg.code;
+    app.online.seat = msg.seat;
+    app.mySeat = msg.seat;
+    app.online.started = false;
+    $('onlChooser').classList.add('hidden');
+    $('onlRoom').classList.remove('hidden');
+    $('roomCode').textContent = msg.code;
+    $('roomHint').textContent = msg.resumed
+      ? '已重连回房间…'
+      : '把房号发给朋友；两人都在线后自动开局';
+  }
+
+  function onNetPeer(msg) {
+    app.online.seats[msg.seat] = msg.online;
+    if (app.online.started) {
+      toast(msg.online ? '对手已重新连接' : '对手掉线了，等待重连…');
+    } else if (msg.online) {
+      $('roomHint').textContent = '对手来了，正在开局…';
+    }
+  }
+
+  function onNetError(msg) {
+    toast(msg);
+  }
+
+  function onNetState(msg) {
+    var seats = msg.seats || [false, false];
+    app.online.seats = seats;
+    var both = seats[0] && seats[1];
+
+    if (!app.online.started) {
+      if (!both) {
+        $('roomHint').textContent = '等待对手加入…（对方到齐后自动开局）';
+        return;
+      }
+      startOnlineGame(msg);
+      return;
+    }
+    applyOnlineState(msg);
+  }
+
+  function startOnlineGame(msg) {
+    app.mode = 'online';
+    app.online.started = true;
+    app.mySeat = app.online.seat;
+    app.game = ENGINE.Game.fromJSON(msg.state);
+    app.selected = 'infantry';
+    app.hover = null;
+    app.inspect = null;
+    app.effects.length = 0;
+
+    els.log.innerHTML = '';
+    app.renderer.setGame(app.game);
+    hideOverlay('ovOnline');
+    hideOverlay('ovMenu');
+
+    var g = app.game;
+    addLog('联机对局 · 房号 ' + app.online.code + ' · 你是 ' + g.players[app.mySeat].name, 'sys');
+    addLog('地图边长 ' + g.side + '（' + g.board.count + ' 格 / ' + g.board.obstacles + ' 处障碍）', 'sys');
+    addLog('第 ' + g.turn + ' 回合 · ' + g.players[g.active].name + ' 行动', 'turn');
+
+    if (msg.event) applyRemoteEvent(msg.event);
+    refresh();
+    if (g.over) setTimeout(showGameOver, 400);
+  }
+
+  function applyOnlineState(msg) {
+    var prevTurn = app.game ? app.game.turn : 0;
+    app.game = ENGINE.Game.fromJSON(msg.state);
+    app.renderer.setGame(app.game);
+    app.mySeat = app.online.seat;
+
+    if (msg.event) applyRemoteEvent(msg.event);
+    else if (app.game.turn !== prevTurn) {
+      addLog('第 ' + app.game.turn + ' 回合 · ' + app.game.players[app.game.active].name + ' 行动', 'turn');
+    }
+
+    refresh();
+    if (app.game.over) setTimeout(showGameOver, 400);
+  }
+
+  // 把服务端发来的事件还原成和本地一样的效果
+  function applyRemoteEvent(ev) {
+    var g = app.game;
+    if (!g || !ev) return;
+
+    if (ev.kind === 'place') {
+      var tp = typesOf()[ev.type];
+      addLog(g.players[ev.owner != null ? ev.owner : ev.active].name +
+        ' 部署 ' + (tp ? tp.name : '棋子'), 'place');
+      return;
+    }
+
+    if (ev.kind === 'end') {
+      var ended = ev.active;
+      if (ev.next != null && ev.next === app.mySeat) toast('轮到你了');
+      else if (ev.next != null) toast('对手回合');
+      if (ended != null) { /* 战报由 turn 变化补 */ }
+      addLog('第 ' + ev.turn + ' 回合 · ' + g.players[ev.next].name + ' 行动', 'turn');
+      return;
+    }
+
+    if (ev.kind === 'resign') {
+      addLog(g.players[ev.active].name + ' 认输', 'big');
+      return;
+    }
+
+    if (ev.kind === 'resolve') {
+      var damage = new Map();
+      Object.keys(ev.damage || {}).forEach(function (k) {
+        damage.set(Number(k), ev.damage[k]);
+      });
+      var removed = (ev.removed || []).map(function (r) {
+        return { piece: { owner: r.owner, kind: r.kind, key: r.key, hp: r.hp || 0 }, damage: r.damage, reason: r.reason };
+      });
+      var res = {
+        active: ev.active,
+        resolveCount: ev.resolveCount,
+        damage: damage,
+        removed: removed,
+        killedByDamage: removed.filter(function (r) { return r.reason === 'damage'; }),
+        removedByCut: removed.filter(function (r) { return r.reason === 'cut'; }),
+        over: !!ev.over,
+        winner: ev.winner
+      };
+      renderResolveResult(res);
+    }
+  }
+  /* ---------------- 弹窗 / 提示 ---------------- */
+
+  function showOverlay(id) { var el = $(id); if (el) el.classList.remove('hidden'); }
+  function hideOverlay(id) { var el = $(id); if (el) el.classList.add('hidden'); }
+
+  function overlayOpen() {
+    var ids = ['ovMenu', 'ovSettings', 'ovOnline', 'ovRules', 'ovOver'];
+    for (var i = 0; i < ids.length; i++) {
+      var el = $(ids[i]);
+      if (el && !el.classList.contains('hidden')) return true;
+    }
+    return false;
+  }
+
+  function showGameOver() {
+    var g = app.game;
+    if (!g) return;
+    var again = $('btnAgain');
+    if (again) again.textContent = (app.mode === 'online') ? '返回主菜单' : '再来一局';
+    if (g.winner === -1) {
+      els.overTitle.textContent = '同归于尽';
+      els.overTitle.className = 'over-title draw';
+      els.overSub.textContent = '双方大本营在同一轮结算中同时被摧毁，本局平局。';
+    } else {
+      var name = g.players[g.winner].name;
+      els.overTitle.textContent = name + ' 胜利';
+      els.overTitle.className = 'over-title win-p' + g.winner;
+      els.overSub.textContent = '对手的大本营被摧毁。本局共进行 ' + g.turn + ' 回合，' +
+        g.players[0].name + ' ' + g.stats(0).kills + ' 杀 / ' + g.players[1].name + ' ' + g.stats(1).kills + ' 杀。';
+    }
+    showOverlay('ovOver');
+  }
+
+  function toast(msg) {
+    els.toast.textContent = msg;
+    els.toast.classList.add('show');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(function () { els.toast.classList.remove('show'); }, 1600);
+  }
+
+  function addLog(text, kind) {
+    var li = document.createElement('li');
+    li.className = 'log-item' + (kind ? ' ' + kind : '');
+    li.textContent = text;
+    els.log.appendChild(li);
+    while (els.log.children.length > 120) els.log.removeChild(els.log.firstChild);
+    els.log.scrollTop = els.log.scrollHeight;
+  }
+
+  /* ---------------- 设置界面 ---------------- */
+
+  var SET_FIELDS = {
+    hp: [1, 30], atk: [0, 20], range: [0, 6], cost: [1, 30]
+  };
+
+  function renderUnitRows() {
+    var html = '';
+    ENGINE.TYPE_LIST.forEach(function (id) {
+      var def = ENGINE.TYPES[id];
+      html += '<tr><td><b>' + def.name + '</b></td>';
+      ['hp', 'atk', 'range', 'cost'].forEach(function (f) {
+        html += '<td><input class="num" type="number" step="1" inputmode="numeric"' +
+          ' data-path="types.' + id + '.' + f + '"' +
+          ' min="' + SET_FIELDS[f][0] + '" max="' + SET_FIELDS[f][1] + '" /></td>';
+      });
+      html += '</tr>';
+    });
+    els.setUnitRows.innerHTML = html;
+  }
+
+  function syncSettingsForm() {
+    if (!app.settings) return;
+    var root = ovSettings;
+    Array.prototype.forEach.call(root.querySelectorAll('[data-path]'), function (el) {
+      var v = getPath(app.settings, el.getAttribute('data-path'));
+      if (document.activeElement !== el) el.value = (v == null ? '' : String(v));
+    });
+    var dens = setDensity;
+    Array.prototype.forEach.call(dens.querySelectorAll('button'), function (b) {
+      b.classList.toggle('on', Number(b.getAttribute('data-d')) === Number(app.settings.density));
+    });
+    var first = setFirst;
+    Array.prototype.forEach.call(first.querySelectorAll('button'), function (b) {
+      b.classList.toggle('on', Number(b.getAttribute('data-p')) === Number(app.settings.firstPlayer));
+    });
+    updateSettingHints();
+  }
+
+  function updateSettingHints() {
+    var s = app.settings;
+    if (!s) return;
+    var side = clampInt(s.side, 3, 8, 5);
+    var e = clampInt(s.energy, 1, 9, 3);
+    var bonus = clampInt(s.lastBonus, 0, 8, 1);
+    var baseHp = clampInt(s.baseHp, 1, 20, 4);
+    setSideHint.textContent = '共 ' + Hex.cellCount(side) + ' 格';
+    setEnergyHint.textContent = '第 1 回合：先手 ' + e + ' 点 / 后手 ' + (e + bonus) +
+      ' 点；之后每回合 ' + e + ' 点。';
+    setBaseHint.textContent = '攻击合计满 ' + baseHp + ' 点被摧毁';
+  }
+
+  function updateMenuSummary() {
+    var s = app.settings;
+    if (!s) return;
+    var side = clampInt(s.side, 3, 8, 5);
+    var dens = { 0: '无', 0.08: '低', 0.14: '中', 0.22: '高' };
+    var dl = dens[Number(s.density)];
+    if (!dl) dl = Math.round(Number(s.density || 0) * 100) + '%';
+    var names = ['青方', '赤方'];
+    var fp = Number(s.firstPlayer) === 1 ? 1 : 0;
+    menuSummary.innerHTML =
+      '<span>边长 ' + side + ' · ' + Hex.cellCount(side) + ' 格</span>' +
+      '<span>障碍 ' + dl + '</span>' +
+      '<span>每回合 ' + clampInt(s.energy, 1, 9, 3) + ' 费</span>' +
+      '<span>' + names[fp] + '先手</span>' +
+      '<span>后手 +' + clampInt(s.lastBonus, 0, 8, 1) + ' 费</span>' +
+      '<span>基地 ' + clampInt(s.baseHp, 1, 20, 4) + ' 血</span>';
+  }
+
+  function openSettings() {
+    syncSettingsForm();
+    showOverlay('ovSettings');
+  }
+
+  /* ---------------- 事件绑定 ---------------- */
+
+  function bindMenuAndSettings() {
+    btnOpenSettings.addEventListener('click', openSettings);
+    btnSetDone.addEventListener('click', function () {
+      sanitizeSettings();
+      saveSettings();
+      updateMenuSummary();
+      hideOverlay('ovSettings');
+    });
+    btnSetReset.addEventListener('click', function () {
+      app.settings = defaultSettings();
+      sanitizeSettings();
+      saveSettings();
+      syncSettingsForm();
+      updateMenuSummary();
+      toast('已恢复默认设置');
+    });
+    setDensity.addEventListener('click', function (e) {
+      var b = e.target.closest ? e.target.closest('button') : null;
+      if (!b) return;
+      app.settings.density = Number(b.getAttribute('data-d'));
+      saveSettings();
+      syncSettingsForm();
+      updateMenuSummary();
+    });
+    setFirst.addEventListener('click', function (e) {
+      var b = e.target.closest ? e.target.closest('button') : null;
+      if (!b) return;
+      app.settings.firstPlayer = Number(b.getAttribute('data-p'));
+      saveSettings();
+      syncSettingsForm();
+      updateMenuSummary();
+    });
+    ovSettings.addEventListener('input', function (e) {
+      var el = e.target;
+      var path = el.getAttribute ? el.getAttribute('data-path') : null;
+      if (!path) return;
+      var v = Number(el.value);
+      if (el.value === '' || !isFinite(v)) return;
+      setPath(app.settings, path, v);
+      saveSettings();
+      updateSettingHints();
+      updateMenuSummary();
+    });
+    ovSettings.addEventListener('change', function (e) {
+      var el = e.target;
+      var path = el.getAttribute ? el.getAttribute('data-path') : null;
+      if (!path) return;
+      sanitizeSettings();
+      saveSettings();
+      syncSettingsForm();
+      updateMenuSummary();
+    });
+    $('ovSettings').addEventListener('click', function (e) {
+      if (e.target === this) hideOverlay('ovSettings');
+    });
+  }
+  /* ---------------- 事件绑定 ---------------- */
+
+  function bindEvents() {
+    bindMenuAndSettings();
+    $('btnModeLocal').addEventListener('click', function () { startGame('local'); });
+    $('btnModeAI').addEventListener('click', function () { startGame('ai'); });
+    $('btnModeOnline').addEventListener('click', openOnline);
+
+    $('btnCreateRoom').addEventListener('click', function () {
+      sanitizeSettings();
+      var st = app.settings;
+      Net.create({
+        side: st.side,
+        density: st.density,
+        lastBonus: st.lastBonus,
+        rules: { firstPlayer: st.firstPlayer, energyPerTurn: st.energy, baseHp: st.baseHp },
+        types: st.types
+      });
+    });
+    $('btnJoinRoom').addEventListener('click', function () { Net.join($('inpCode').value); });
+    $('inpCode').addEventListener('keydown', function (e) {
+      if (e.key === 'Enter') Net.join(this.value);
+    });
+    $('btnOnlineBack').addEventListener('click', function () {
+      Net.leave();
+      app.game = null;
+      hideOverlay('ovOnline');
+      updateMenuSummary();
+      showOverlay('ovMenu');
+    });
+
+    $('btnNew').addEventListener('click', function () {
+      if (app.mode === 'online') { Net.leave(); app.game = null; app.mode = 'local'; }
+      clearAITimer();
+      $('btnResume').style.display = (app.game && !app.game.over) ? '' : 'none';
+      updateMenuSummary();
+      showOverlay('ovMenu');
+    });
+    $('btnResume').addEventListener('click', function () { hideOverlay('ovMenu'); });
+    $('btnRules').addEventListener('click', function () { showOverlay('ovRules'); });
+    $('btnRules2').addEventListener('click', function () { showOverlay('ovRules'); });
+    $('btnCloseRules').addEventListener('click', function () { hideOverlay('ovRules'); });
+    $('ovRules').addEventListener('click', function (e) {
+      if (e.target === this) hideOverlay('ovRules');
+    });
+    $('btnAgain').addEventListener('click', function () {
+      hideOverlay('ovOver');
+      if (app.mode === 'online') {
+        Net.leave();
+        app.game = null;
+        app.mode = 'local';
+        updateMenuSummary();
+        showOverlay('ovMenu');
+        return;
+      }
+      startGame(app.mode);
+    });
+    $('btnSettings').addEventListener('click', function () {
+      hideOverlay('ovOver');
+      if (app.mode === 'online') { Net.leave(); app.game = null; app.mode = 'local'; }
+      openSettings();
+    });
+
+    els.btnResolve.addEventListener('click', doResolve);
+    els.btnEnd.addEventListener('click', endTurn);
+    $('btnResign').addEventListener('click', resign);
+
+    els.shop.addEventListener('click', function (e) {
+      var card = e.target.closest ? e.target.closest('.card') : null;
+      if (!card) return;
+      var type = card.getAttribute('data-type');
+      if (!type) return;
+      app.selected = type;
+      app.inspect = null;
+      renderShop();
+      updateInspectCard();
+    });
+
+
+    els.canvas.addEventListener('pointermove', function (e) {
+      var cell = app.renderer.pickCell(e.clientX, e.clientY);
+      var k = cell ? cell.key : null;
+      if ((app.hover && app.hover.key) === k) return;
+      app.hover = cell;
+      updateInspectCard();
+    });
+
+    els.canvas.addEventListener('pointerleave', function () {
+      app.hover = null;
+      updateInspectCard();
+    });
+
+    els.canvas.addEventListener('pointerdown', function (e) {
+      var cell = app.renderer.pickCell(e.clientX, e.clientY);
+      if (cell) handleCellClick(cell);
+    });
+
+    document.addEventListener('keydown', function (e) {
+      if (e.target && /input|textarea|select/i.test(e.target.tagName)) return;
+      var key = e.key;
+      if (overlayOpen()) {
+        if (key === 'Escape') { hideOverlay('ovRules'); hideOverlay('ovSettings'); hideOverlay('ovOnline'); }
+        return;
+      }
+      if (app.mode === 'ai' && !isMyTurn()) return;
+      if (app.mode === 'online' && !isMyTurn()) return;
+      if (key === '1') { app.selected = 'infantry'; renderShop(); }
+      else if (key === '2') { app.selected = 'tank'; renderShop(); }
+      else if (key === '3') { app.selected = 'artillery'; renderShop(); }
+      else if (key === 'r' || key === 'R') { doResolve(); }
+      else if (key === ' ' || key === 'Enter') {
+        if (els.btnEnd.disabled) return;
+        e.preventDefault();
+        endTurn();
+      } else if (key === 'Escape') {
+        hideOverlay('ovRules');
+        hideOverlay('ovOver');
+      }
+    });
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', boot);
+  } else {
+    boot();
+  }
+
+  /* 调试入口：浏览器控制台里可以直接查看/操作对局状态 */
+  window.HexFront = {
+    app: app,
+    start: startGame,
+    refresh: refresh,
+    resolve: doResolve,
+    endTurn: endTurn,
+    resign: resign,
+    select: function (type) { app.selected = type; if (app.game) renderShop(); },
+    toast: function (msg) { toast(msg); }
+  };
+})();

@@ -1,0 +1,389 @@
+/* =========================================================
+ * server.js —— 昨日圆车 联机服务端
+ *
+ *   - 静态托管仓库根目录（index.html / css / js），所以整个项目只需要这一个进程
+ *   - WebSocket 在 /ws，房间状态放在内存里，服务端说了算（客户端改不了数值）
+ *   - 直接复用 js/engine.js，规则只有一份，不会前后端不一致
+ *
+ *   本地运行： node server/server.js      → http://localhost:3000
+ *   Render：  start 命令 = node server/server.js，端口读 process.env.PORT
+ * ========================================================= */
+'use strict';
+
+const http = require('http');
+const fs = require('fs');
+const path = require('path');
+const crypto = require('crypto');
+const { WebSocketServer } = require('ws');
+const ENGINE = require('../js/engine.js');
+
+const PORT = Number(process.env.PORT) || 3000;
+const ROOT = path.join(__dirname, '..');
+
+const MIME = {
+  '.html': 'text/html; charset=utf-8',
+  '.css': 'text/css; charset=utf-8',
+  '.js': 'application/javascript; charset=utf-8',
+  '.json': 'application/json; charset=utf-8',
+  '.png': 'image/png',
+  '.svg': 'image/svg+xml',
+  '.ico': 'image/x-icon',
+  '.txt': 'text/plain; charset=utf-8'
+};
+
+/* ---------------- 静态文件 ---------------- */
+
+const server = http.createServer((req, res) => {
+  let pathname;
+  try {
+    pathname = decodeURIComponent(new URL(req.url, 'http://localhost').pathname);
+  } catch (e) {
+    res.writeHead(400);
+    return res.end('bad url');
+  }
+
+  if (pathname === '/health') {
+    res.writeHead(200, { 'content-type': 'text/plain; charset=utf-8' });
+    return res.end('ok');
+  }
+  if (pathname === '/') pathname = '/index.html';
+
+  const file = path.normalize(path.join(ROOT, pathname));
+  if (!file.startsWith(ROOT)) {
+    res.writeHead(403);
+    return res.end('forbidden');
+  }
+
+  fs.readFile(file, (err, buf) => {
+    if (err) {
+      res.writeHead(404, { 'content-type': 'text/plain; charset=utf-8' });
+      return res.end('not found');
+    }
+    res.writeHead(200, {
+      'content-type': MIME[path.extname(file).toLowerCase()] || 'application/octet-stream',
+      'cache-control': 'no-cache'
+    });
+    res.end(buf);
+  });
+});
+
+/* ---------------- 房间 ---------------- */
+
+const rooms = new Map();          // code -> room
+const ROOM_TTL = 3 * 60 * 60 * 1000;   // 3 小时没动静就清理
+const SEAT_TIMEOUT = 10 * 60 * 1000;   // 掉线后座位保留 10 分钟
+
+function newCode() {
+  for (let i = 0; i < 200; i++) {
+    const code = String(Math.floor(1000 + Math.random() * 9000));
+    if (!rooms.has(code)) return code;
+  }
+  return String(Date.now()).slice(-4);
+}
+
+function newToken() {
+  return crypto.randomBytes(12).toString('hex');
+}
+
+function sanitizeSettings(raw) {
+  const s = raw || {};
+  const rules = {
+    baseHp: clamp(s.rules && s.rules.baseHp, 1, 20, 4),
+    energyPerTurn: clamp(s.rules && s.rules.energyPerTurn, 1, 9, 3),
+    firstPlayer: (s.rules && Number(s.rules.firstPlayer) === 0) ? 0 : 1,
+    firstTurnEnergy: [3, 3]
+  };
+  const bonus = clamp(s.lastBonus, 0, 8, 1);
+  rules.firstTurnEnergy = [rules.energyPerTurn, rules.energyPerTurn];
+  rules.firstTurnEnergy[1 - rules.firstPlayer] = rules.energyPerTurn + bonus;
+
+  const types = {};
+  ['infantry', 'tank', 'artillery'].forEach((id) => {
+    const t = (s.types && s.types[id]) || {};
+    const def = ENGINE.TYPES[id];
+    types[id] = {
+      hp: clamp(t.hp, 1, 30, def.hp),
+      atk: clamp(t.atk, 0, 20, def.atk),
+      range: clamp(t.range, 0, 6, def.range),
+      cost: clamp(t.cost, 1, 30, def.cost)
+    };
+  });
+
+  return {
+    side: clamp(s.side, 3, 8, 5),
+    density: clamp(s.density, 0, 0.4, 0.14),
+    rules,
+    types
+  };
+}
+
+function clamp(v, min, max, fallback) {
+  const n = Number(v);
+  if (!isFinite(n)) return fallback;
+  return Math.min(max, Math.max(min, Math.round(n)));
+}
+
+function send(ws, msg) {
+  if (ws && ws.readyState === 1) ws.send(JSON.stringify(msg));
+}
+
+function broadcast(room, msg) {
+  const text = JSON.stringify(msg);
+  room.seats.forEach((c) => {
+    if (c.ws && c.ws.readyState === 1) c.ws.send(text);
+  });
+}
+
+function pushState(room, extra) {
+  const msg = {
+    t: 'state',
+    state: room.game.toJSON(),
+    seats: room.seats.map((c) => !!c.online)
+  };
+  if (extra) msg.event = extra;
+  broadcast(room, msg);
+}
+
+// 结算结果要发给前端做飘字/战报，Map 转成普通对象
+function damageToObj(map) {
+  const out = {};
+  if (map) map.forEach((v, k) => { out[k] = v; });
+  return out;
+}
+
+function roomOf(ws) {
+  return ws.meta && ws.meta.code ? rooms.get(ws.meta.code) : null;
+}
+
+/* ---------------- WebSocket ---------------- */
+
+const wss = new WebSocketServer({ server, path: '/ws' });
+
+wss.on('connection', (ws) => {
+  ws.meta = { code: null, seat: -1 };
+  ws.isAlive = true;
+  ws.on('pong', () => { ws.isAlive = true; });
+
+  ws.on('message', (raw) => {
+    let msg;
+    try {
+      msg = JSON.parse(raw.toString());
+    } catch (e) {
+      return;
+    }
+    try {
+      handle(ws, msg);
+    } catch (err) {
+      send(ws, { t: 'err', msg: String(err && err.message || err) });
+    }
+  });
+
+  ws.on('close', () => {
+    const room = roomOf(ws);
+    if (!room) return;
+    const seat = room.seats[ws.meta.seat];
+    if (seat && seat.ws === ws) {
+      seat.ws = null;
+      seat.online = false;
+      seat.leftAt = Date.now();
+      broadcast(room, { t: 'peer', seat: ws.meta.seat, online: false });
+    }
+  });
+});
+
+function handle(ws, msg) {
+  switch (msg.t) {
+    case 'ping':
+      return send(ws, { t: 'pong', now: Date.now() });
+    case 'create':
+      return doCreate(ws, msg);
+    case 'join':
+      return doJoin(ws, msg);
+    case 'rejoin':
+      return doRejoin(ws, msg);
+    case 'act':
+      return doAct(ws, msg);
+    case 'leave':
+      return doLeave(ws);
+    default:
+      return send(ws, { t: 'err', msg: '未知指令' });
+  }
+}
+
+function doCreate(ws, msg) {
+  if (ws.meta.code) doLeave(ws);
+  const s = sanitizeSettings(msg.settings);
+  const code = newCode();
+  const game = new ENGINE.Game({
+    side: s.side,
+    density: s.density,
+    rules: s.rules,
+    types: s.types,
+    seed: Math.floor(Math.random() * 1e9)
+  });
+
+  const token = newToken();
+  const room = {
+    code,
+    game,
+    createdAt: Date.now(),
+    updatedAt: Date.now(),
+    seats: [
+      { token, ws, online: true, leftAt: 0 },
+      { token: null, ws: null, online: false, leftAt: 0 }
+    ]
+  };
+  rooms.set(code, room);
+  ws.meta = { code, seat: 0 };
+  send(ws, { t: 'room', code, seat: 0, token });
+  pushState(room);
+}
+
+function doJoin(ws, msg) {
+  const code = String(msg.code || '').trim();
+  const room = rooms.get(code);
+  if (!room) return send(ws, { t: 'err', msg: '房间不存在或已失效' });
+  if (ws.meta.code) doLeave(ws);
+
+  // 找一个空位（掉线超过保留时间的座位可以让出来）
+  let seat = -1;
+  for (let i = 0; i < 2; i++) {
+    const s = room.seats[i];
+    const reconnectable = !s.online && s.token && (Date.now() - s.leftAt < SEAT_TIMEOUT);
+    if (!s.token || (!reconnectable && !s.online)) { seat = i; break; }
+    if (reconnectable) continue;
+  }
+  if (seat < 0) return send(ws, { t: 'err', msg: '房间已满（两个座位都在线）' });
+
+  const token = newToken();
+  room.seats[seat] = { token, ws, online: true, leftAt: 0 };
+  room.updatedAt = Date.now();
+  ws.meta = { code, seat };
+
+  send(ws, { t: 'room', code, seat, token });
+  broadcast(room, { t: 'peer', seat, online: true });
+  pushState(room);
+}
+
+function doRejoin(ws, msg) {
+  const code = String(msg.code || '').trim();
+  const token = String(msg.token || '');
+  const room = rooms.get(code);
+  if (!room) return send(ws, { t: 'err', msg: '房间已失效' });
+
+  for (let i = 0; i < 2; i++) {
+    const s = room.seats[i];
+    if (s.token === token) {
+      if (s.ws && s.ws !== ws && s.ws.readyState === 1) {
+        // 旧连接还在，顶掉它
+        try { s.ws.close(); } catch (e) {}
+      }
+      s.ws = ws;
+      s.online = true;
+      s.leftAt = 0;
+      ws.meta = { code, seat: i };
+      room.updatedAt = Date.now();
+      send(ws, { t: 'room', code, seat: i, token, resumed: true });
+      broadcast(room, { t: 'peer', seat: i, online: true });
+      pushState(room);
+      return;
+    }
+  }
+  send(ws, { t: 'err', msg: '座位已过期，请重新加入' });
+}
+
+function doAct(ws, msg) {
+  const room = roomOf(ws);
+  if (!room) return send(ws, { t: 'err', msg: '不在房间里' });
+  const seat = ws.meta.seat;
+  const g = room.game;
+  const action = msg.action || {};
+
+  if (g.over) return send(ws, { t: 'err', msg: '对局已结束' });
+  if (g.active !== seat) return send(ws, { t: 'err', msg: '还没轮到你' });
+
+  let event = null;
+
+  if (action.kind === 'place') {
+    if (!g.types[action.type]) return send(ws, { t: 'err', msg: '未知兵种' });
+    g.place(g.active, action.type, String(action.cell));
+    event = { kind: 'place', owner: seat, type: action.type, cell: String(action.cell) };
+  } else if (action.kind === 'resolve') {
+    const result = g.resolve();
+    event = {
+      kind: 'resolve',
+      active: seat,
+      resolveCount: result ? result.resolveCount : 0,
+      removed: (result ? result.removed : []).map((r) => ({
+        owner: r.piece.owner,
+        kind: r.piece.kind,
+        key: r.piece.key,
+        hp: r.piece.hp,
+        reason: r.reason,
+        damage: r.damage
+      })),
+      damage: damageToObj(result ? result.damage : null),
+      over: g.over,
+      winner: g.winner
+    };
+  } else if (action.kind === 'end') {
+    g.endTurn();
+    event = { kind: 'end', active: seat, next: g.active, turn: g.turn };
+  } else if (action.kind === 'resign') {
+    g.over = true;
+    g.winner = 1 - seat;
+    event = { kind: 'resign', active: seat, winner: g.winner };
+  } else {
+    return send(ws, { t: 'err', msg: '未知操作' });
+  }
+
+  room.updatedAt = Date.now();
+  pushState(room, event);
+}
+
+function doLeave(ws) {
+  const room = roomOf(ws);
+  if (!room) return;
+  const seat = room.seats[ws.meta.seat];
+  if (seat && seat.ws === ws) {
+    seat.ws = null;
+    seat.online = false;
+    seat.leftAt = Date.now();
+    broadcast(room, { t: 'peer', seat: ws.meta.seat, online: false });
+  }
+  ws.meta = { code: null, seat: -1 };
+}
+
+/* ---------------- 保活 / 清理 ---------------- */
+
+// WebSocket 心跳：防止中间层把长连接掐掉
+const heartbeat = setInterval(() => {
+  wss.clients.forEach((ws) => {
+    if (ws.isAlive === false) return ws.terminate();
+    ws.isAlive = false;
+    try { ws.ping(); } catch (e) {}
+  });
+}, 25000);
+
+// 清理空房间
+const sweeper = setInterval(() => {
+  const now = Date.now();
+  rooms.forEach((room, code) => {
+    const alive = room.seats.some((s) => s.online);
+    if (!alive && now - room.updatedAt > ROOM_TTL) rooms.delete(code);
+  });
+}, 10 * 60 * 1000);
+
+function shutdown() {
+  clearInterval(heartbeat);
+  clearInterval(sweeper);
+  wss.close();
+  server.close(() => process.exit(0));
+  setTimeout(() => process.exit(0), 2000);
+}
+process.on('SIGTERM', shutdown);
+process.on('SIGINT', shutdown);
+
+server.listen(PORT, () => {
+  console.log('昨日圆车 服务已启动: http://localhost:' + PORT);
+});

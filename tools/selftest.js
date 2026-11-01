@@ -1,0 +1,339 @@
+/* 规则引擎自检（Node 运行，不参与网页） */
+global.window = global;
+require('../js/hex.js');
+require('../js/engine.js');
+
+const Hex = global.Hex;
+const ENGINE = global.ENGINE;
+
+let pass = 0;
+let fail = 0;
+function ok(cond, msg) {
+  if (cond) { pass++; }
+  else { fail++; console.log('  ✗ ' + msg); }
+}
+function eq(a, b, msg) { ok(a === b, msg + ' (期望 ' + b + '，实际 ' + a + ')'); }
+
+// 直接摆一个棋子（跳过放置规则，用于构造局面）
+function force(g, owner, kind, q, r) {
+  const t = kind === 'base'
+    ? { hp: (g.rules ? g.rules.baseHp : ENGINE.BASE_HP), atk: 0, range: 0 }
+    : (g.types ? g.types[kind] : ENGINE.TYPES[kind]);
+  const key = Hex.key(q, r);
+  if (g.occupant.has(key)) throw new Error('格子已被占用 ' + key);
+  const p = {
+    id: g.nextId++, owner, kind, key,
+    hp: t.hp, maxHp: t.hp, atk: t.atk, range: t.range
+  };
+  g.pieces.set(p.id, p);
+  g.occupant.set(key, p.id);
+  return p;
+}
+function clearBoard(g) {
+  g.pieces.clear();
+  g.occupant.clear();
+  g.baseIds = [null, null];
+  g.baseIds[0] = g.spawnBase(0, g.board.baseA).id;
+  g.baseIds[1] = g.spawnBase(1, g.board.baseB).id;
+}
+function near(g, a, b) { return Hex.distance(a, b); }
+
+console.log('== 1. 地图生成 ==');
+for (let side = 3; side <= 7; side++) {
+  for (let trial = 0; trial < 20; trial++) {
+    const seed = 1000 + trial;
+    const rng = ENGINE.mulberry32(seed);
+    const g = new ENGINE.Game({ side, density: 0.14, seed, rng });
+    eq(g.board.count, Hex.cellCount(side), `边长 ${side} 的格子数`);
+
+    // 上下镜像对称
+    let symOK = true;
+    g.board.cells.forEach((c) => {
+      const m = Hex.mirror(c.q, c.r);
+      const mc = g.board.cells.get(Hex.key(m.q, m.r));
+      if (!mc || mc.obstacle !== c.obstacle) symOK = false;
+    });
+    ok(symOK, `边长 ${side} 障碍物上下镜像`);
+
+    // 基地及其邻格不被障碍占
+    let baseOK = true;
+    [g.board.baseA, g.board.baseB].forEach((b) => {
+      const bc = g.board.cells.get(Hex.key(b.q, b.r));
+      if (!bc || bc.obstacle) baseOK = false;
+      Hex.neighbors(b.q, b.r).forEach((n) => {
+        const nc = g.board.cells.get(Hex.key(n.q, n.r));
+        if (nc && nc.obstacle) baseOK = false;
+      });
+    });
+    ok(baseOK, `边长 ${side} 基地周围干净`);
+
+    // 两个基地必须连通
+    const seen = new Set([Hex.key(g.board.baseA.q, g.board.baseA.r)]);
+    const stack = [Hex.key(g.board.baseA.q, g.board.baseA.r)];
+    while (stack.length) {
+      const k = stack.pop();
+      const c = Hex.parse(k);
+      const ns = Hex.neighbors(c.q, c.r);
+      for (let ni = 0; ni < ns.length; ni++) {
+        const nk = Hex.key(ns[ni].q, ns[ni].r);
+        if (seen.has(nk)) continue;
+        const nc = g.board.cells.get(nk);
+        if (!nc || nc.obstacle) continue;
+        seen.add(nk); stack.push(nk);
+      }
+    }
+    ok(seen.has(Hex.key(g.board.baseB.q, g.board.baseB.r)), `边长 ${side} 双基地连通`);
+  }
+}
+console.log('== 2. 放置规则与费用（赤方先手） ==');
+{
+  const g = new ENGINE.Game({ side: 5, density: 0, seed: 42 });
+  eq(g.firstPlayer, 1, '先手是赤方');
+  eq(g.active, 1, '第一个行动的是赤方');
+  eq(g.energy, 3, '赤方首回合 3 点费用');
+  eq(g.turnEnergyMax, 3, '本回合费用上限记录为 3');
+
+  const legal = g.legalCells(1);
+  eq(legal.size, 3, '开局只有基地的 3 个邻格可放');
+  const first = [...legal][0];
+  g.place(1, 'infantry', first);
+  eq(g.energy, 2, '步兵花 1 费');
+  ok(!g.legalCells(1).has(first), '已占格不再是落点');
+  g.place(1, 'tank', [...g.legalCells(1)][0]);
+  eq(g.energy, 0, '坦克花 2 费');
+  let threw = false;
+  try { g.place(1, 'infantry', [...g.legalCells(1)][0]); } catch (e) { threw = true; }
+  ok(threw, '费用不足时不能放置');
+  threw = false;
+  try { g.place(0, 'infantry', [...g.legalCells(0)][0]); } catch (e) { threw = true; }
+  ok(threw, '不是自己回合不能放置');
+
+  g.endTurn();
+  eq(g.active, 0, '轮到青方');
+  eq(g.energy, 4, '青方首回合 4 点费用（后手补偿）');
+  eq(g.turnEnergyMax, 4, '青方首回合费用上限为 4');
+  eq(g.resolveCount, 0, '换人后结算次数重置');
+  g.endTurn();
+  eq(g.turn, 2, '双方各走一次后进入第 2 回合');
+  eq(g.active, 1, '第 2 回合仍然赤方先动');
+  eq(g.energy, 3, '第 2 回合回到常规 3 点');
+  eq(g.turnEnergyMax, 3, '第 2 回合费用上限为 3');
+}
+console.log('== 3. 结算伤害判定（血量 ≤ 攻击之和 就死） ==');
+{
+  // 2 点打 3 血步兵：不死
+  const g = new ENGINE.Game({ side: 5, density: 0, seed: 7 });
+  clearBoard(g);
+  const t1 = force(g, 0, 'infantry', 1, -4);
+  force(g, 1, 'infantry', 2, -4);
+  force(g, 1, 'infantry', 0, -3);
+  let res = g.resolve();
+  eq(res.damage.get(t1.id), 2, '2 个相邻敌人 = 2 点伤害');
+  eq(res.killedByDamage.length, 0, '3 血吃 2 点：不死');
+
+  // 3 点打 3 血：恰好等于血量，死亡
+  const g2 = new ENGINE.Game({ side: 5, density: 0, seed: 8 });
+  clearBoard(g2);
+  const t2 = force(g2, 0, 'infantry', 1, -4);
+  force(g2, 1, 'infantry', 2, -4);
+  force(g2, 1, 'infantry', 0, -3);
+  force(g2, 1, 'infantry', 1, -3);
+  res = g2.resolve();
+  eq(res.damage.get(t2.id), 3, '3 个相邻敌人 = 3 点伤害');
+  eq(res.killedByDamage.length, 1, '3 血吃 3 点：死亡（血量 = 攻击）');
+  eq(res.killedByDamage[0].piece.id, t2.id, '死的就是那个步兵');
+
+  // 坦克 4 血：3 点不死，4 点死
+  const g3 = new ENGINE.Game({ side: 5, density: 0, seed: 9 });
+  clearBoard(g3);
+  const tk = force(g3, 0, 'tank', 1, -4);
+  force(g3, 1, 'infantry', 2, -4);
+  force(g3, 1, 'infantry', 0, -3);
+  force(g3, 1, 'infantry', 1, -3);
+  res = g3.resolve();
+  eq(res.damage.get(tk.id), 3, '坦克吃到 3 点');
+  eq(res.killedByDamage.length, 0, '4 血坦克吃 3 点不死');
+
+  const g4 = new ENGINE.Game({ side: 5, density: 0, seed: 10 });
+  clearBoard(g4);
+  const tk2 = force(g4, 0, 'tank', 1, -4);
+  force(g4, 1, 'infantry', 2, -4);
+  force(g4, 1, 'infantry', 0, -3);
+  force(g4, 1, 'infantry', 1, -3);
+  force(g4, 1, 'artillery', 3, -4);      // 距离 2，射程 2
+  res = g4.resolve();
+  eq(res.damage.get(tk2.id), 4, '坦克吃到 4 点');
+  eq(res.killedByDamage.length, 1, '4 血坦克吃 4 点：死亡');
+
+  // 炮兵的射程 2 确实够得着
+  const g5 = new ENGINE.Game({ side: 5, density: 0, seed: 17 });
+  clearBoard(g5);
+  const t5 = force(g5, 0, 'infantry', 1, -4);
+  force(g5, 1, 'artillery', 3, -4);
+  res = g5.resolve();
+  eq(res.damage.get(t5.id), 1, '射程 2 的炮兵打得到距离 2 的目标');
+}
+console.log('== 4. 断联移除 ==');
+{
+  const g = new ENGINE.Game({ side: 5, density: 0, seed: 11 });
+  clearBoard(g);
+  // 一条从基地向下的链：base(0,-4) - (0,-3) - (0,-2) - (0,-1)
+  const a = force(g, 0, 'infantry', 0, -3);
+  const b = force(g, 0, 'infantry', 0, -2);
+  const c = force(g, 0, 'infantry', 0, -1);
+  ok(g.componentKeys(0).size === 4, '基地 + 3 个棋子同属一个连通块');
+
+  // 赤方用 3 点攻击打断中间的 b；c 只吃到 2 点，活着但会断联
+  force(g, 1, 'infantry', 1, -2);
+  force(g, 1, 'infantry', -1, -1);
+  force(g, 1, 'infantry', -1, -2);
+  const res = g.resolve();
+  ok(res.killedByDamage.some((r) => r.piece.id === b.id), '中间的棋子被打死');
+  ok(res.removedByCut.some((r) => r.piece.id === c.id), '断开的尾兵被移除');
+  ok(!g.pieces.has(c.id) && g.pieces.has(a.id), 'a 仍连着基地、c 已消失');
+}
+console.log('== 5. 大本营与胜负 ==');
+{
+  // 3 点打 4 血基地：不死
+  const g = new ENGINE.Game({ side: 5, density: 0, seed: 13 });
+  clearBoard(g);
+  force(g, 1, 'infantry', 1, -4);
+  force(g, 1, 'infantry', 0, -3);
+  force(g, 1, 'infantry', -1, -3);
+  const res = g.resolve();
+  eq(res.damage.get(g.baseOf(0).id), 3, '基地吃到 3 点');
+  eq(res.deadBases[0], false, '4 血基地吃 3 点不死');
+  ok(!g.over, '还没结束');
+
+  // 4 点：直接摧毁
+  const g2 = new ENGINE.Game({ side: 5, density: 0, seed: 14 });
+  clearBoard(g2);
+  force(g2, 1, 'infantry', 1, -4);
+  force(g2, 1, 'infantry', 0, -3);
+  force(g2, 1, 'infantry', -1, -3);
+  force(g2, 1, 'artillery', 2, -4);      // 距离 2
+  const res2 = g2.resolve();
+  ok(res2.deadBases[0], '4 点攻击打爆 4 血基地');
+  ok(g2.over && g2.winner === 1, '赤方获胜');
+}
+console.log('== 6. 随机对局压力测试 ==');
+{
+  let games = 0, actions = 0, overCount = 0;
+  for (let side = 3; side <= 7; side++) {
+    for (let trial = 0; trial < 12; trial++) {
+      const seed = side * 1000 + trial;
+      const rng = ENGINE.mulberry32(seed);
+      const g = new ENGINE.Game({ side, density: 0.1 + (trial % 4) * 0.05, seed, rng });
+      games++;
+      let guard = 0;
+      while (!g.over && guard < 500) {
+        guard++;
+        // 随机放置
+        let placed = 0;
+        while (placed < 6) {
+          const legal = [...g.legalCells(g.active)];
+          const afford = ENGINE.TYPE_LIST.filter((t) => ENGINE.TYPES[t].cost <= g.energy);
+          if (!legal.length || !afford.length) break;
+          const type = afford[Math.floor(rng() * afford.length)];
+          const cell = legal[Math.floor(rng() * legal.length)];
+          g.place(g.active, type, cell);
+          actions++;
+          placed++;
+          if (rng() < 0.15) break;
+        }
+        if (rng() < 0.8 && !g.resolved) { g.resolve(); actions++; }
+        if (g.over) { overCount++; break; }
+        g.endTurn();
+        actions++;
+
+        // 不变量
+        let bad = 0;
+        g.pieces.forEach((p) => {
+          const cell = g.board.cells.get(p.key);
+          if (!cell || cell.obstacle) bad++;
+          if (g.occupant.get(p.key) !== p.id) bad++;
+        });
+        if (g.occupant.size !== g.pieces.size) bad++;
+        if (bad) { fail++; console.log('  ✗ 状态不一致，坏点数 ' + bad); break; }
+      }
+      // 每个棋子都必须在合法格子上
+      ok(g.occupant.size === g.pieces.size, `seed ${seed} 占位表一致`);
+    }
+  }
+  console.log(`  随机对局 ${games} 局、${actions} 次操作，其中 ${overCount} 局分出胜负`);
+}
+console.log('== 7. 镜像对称的公平性 ==');
+{
+  // 同一个种子下，双方开局可放格数应相同
+  for (let side = 3; side <= 7; side++) {
+    const g = new ENGINE.Game({ side, density: 0.14, seed: 99 });
+    eq(g.legalCells(0).size, g.legalCells(1).size, `边长 ${side} 双方开局落点数相同`);
+  }
+}
+
+console.log('== 8. 结算不限次数 ==');
+{
+  const g = new ENGINE.Game({ side: 5, density: 0, seed: 21 });
+  const first = [...g.legalCells(g.active)][0];
+  g.place(g.active, 'infantry', first);
+  const r1 = g.resolve();
+  eq(r1.resolveCount, 1, '第一次结算');
+  // 连续结算不应报错，也不应改变局面
+  const before = g.pieces.size;
+  const r2 = g.resolve();
+  ok(!!r2, '同一回合可以再结算');
+  eq(r2.resolveCount, 2, '结算次数累加');
+  eq(g.pieces.size, before, '没有新棋子时重复结算不改变局面');
+  // 结算后还能继续放棋子，再结算
+  const r3 = g.resolve();
+  eq(r3.resolveCount, 3, '可以连续结算多次');
+  let threw = false;
+  try { g.place(g.active, 'infantry', [...g.legalCells(g.active)][0]); } catch (e) { threw = true; }
+  ok(!threw, '结算之后仍然可以继续放置棋子');
+  const r4 = g.resolve();
+  eq(r4.resolveCount, 4, '放置之后再次结算');
+  g.endTurn();
+  eq(g.resolveCount, 0, '换人后结算次数归零');
+}
+
+console.log('== 9. 自定义数值（设置项） ==');
+{
+  const g = new ENGINE.Game({
+    side: 4, density: 0, seed: 31,
+    rules: { baseHp: 6, energyPerTurn: 5, firstPlayer: 0, firstTurnEnergy: [5, 7] },
+    types: { infantry: { hp: 2, atk: 2, range: 1, cost: 3 } }
+  });
+  eq(g.rules.baseHp, 6, '自定义大本营血量');
+  eq(g.rules.energyPerTurn, 5, '自定义每回合费用');
+  eq(g.firstPlayer, 0, '自定义先手方');
+  eq(g.active, 0, '先手方先行动');
+  eq(g.energy, 5, '先手首回合费用');
+  eq(g.baseOf(0).hp, 6, '基地按自定义血量生成');
+  eq(g.types.infantry.hp, 2, '自定义步兵血量');
+  eq(g.types.infantry.atk, 2, '自定义步兵攻击');
+  eq(g.types.infantry.cost, 3, '自定义步兵费用');
+  eq(g.types.infantry.name, '步兵', '自定义数值不影响名称/字形');
+  eq(g.types.tank.hp, 4, '未自定义的坦克保留默认值');
+
+  g.endTurn();
+  eq(g.energy, 7, '后手首回合按 firstTurnEnergy 给费用');
+  g.endTurn();
+  eq(g.energy, 5, '第二回合回到每回合费用');
+
+  // 2 血步兵吃 2 点就死
+  const g2 = new ENGINE.Game({
+    side: 5, density: 0, seed: 32,
+    rules: { baseHp: 4, energyPerTurn: 3, firstPlayer: 1, firstTurnEnergy: [3, 3] },
+    types: { infantry: { hp: 2, atk: 1, range: 1, cost: 1 } }
+  });
+  clearBoard(g2);
+  const t = force(g2, 0, 'infantry', 1, -4);
+  force(g2, 1, 'infantry', 2, -4);
+  force(g2, 1, 'infantry', 0, -3);
+  const res = g2.resolve();
+  eq(res.damage.get(t.id), 2, '两个敌人 2 点伤害');
+  eq(res.killedByDamage.length, 1, '2 血步兵吃 2 点死亡');
+}
+console.log('\n通过 ' + pass + ' 项，失败 ' + fail + ' 项');
+process.exit(fail ? 1 : 0);
+
