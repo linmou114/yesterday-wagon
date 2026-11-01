@@ -188,19 +188,35 @@
 
     <div class="set-group">
       <h3>地图</h3>
-      <div class="set-row">
-        <label for="setSide">边长</label>
-        <input id="setSide" class="num" type="number" data-path="side" min="3" max="8" step="1" inputmode="numeric" />
-        <span class="unit" id="setSideHint">61 格</span>
-      </div>
       <div class="set-row stack">
-        <label>障碍密度</label>
-        <div class="seg" id="setDensity">
-          <button type="button" data-d="0">无</button>
-          <button type="button" data-d="0.08">低</button>
-          <button type="button" data-d="0.14">中</button>
-          <button type="button" data-d="0.22">高</button>
+        <label>地图来源</label>
+        <div class="seg" id="setMapMode">
+          <button type="button" data-m="random">随机地图</button>
+          <button type="button" data-m="default">默认地图（8 张）</button>
         </div>
+      </div>
+
+      <div id="mapBasic">
+        <div class="set-row">
+          <label for="setSide">边长</label>
+          <input id="setSide" class="num" type="number" data-path="side" min="3" max="8" step="1" inputmode="numeric" />
+          <span class="unit" id="setSideHint">61 格</span>
+        </div>
+        <div class="set-row stack">
+          <label>障碍密度</label>
+          <div class="seg" id="setDensity">
+            <button type="button" data-d="0">无</button>
+            <button type="button" data-d="0.08">低</button>
+            <button type="button" data-d="0.14">中</button>
+            <button type="button" data-d="0.22">高</button>
+          </div>
+        </div>
+      </div>
+
+      <div id="mapPicker" class="hidden">
+        <div class="map-btns" id="mapBtns"></div>
+        <canvas id="mapPreview" class="map-preview"></canvas>
+        <p class="set-note" id="mapNote"></p>
       </div>
     </div>
 
@@ -285,7 +301,7 @@
       </ul>
 
       <h3>地图</h3>
-      <p>障碍物随机生成，且<b>上下镜像对称</b>，保证双方地形完全一致。大本营及其周围一圈永远不会有障碍。</p>
+      <p>障碍物<b>中心对称</b>生成（绕棋盘中心旋转 180° 成对出现），双方地形完全一致。大本营及其周围一圈永远不会有障碍。</p>
 
       <h3>操作</h3>
       <p>点击下方兵种卡选择棋子，再点棋盘上闪烁的格子放置；点「结算」执行判定，点「结束回合」交给对手。
@@ -317,6 +333,7 @@
 
 <script src="js/hex.js"></script>
 <script src="js/engine.js"></script>
+<script src="js/maps.js"></script>
 <script src="js/ai.js"></script>
 <script src="js/net.js"></script>
 <script src="js/renderer.js"></script>

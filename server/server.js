@@ -129,9 +129,11 @@ function sanitizeSettings(raw) {
     };
   });
 
+  const seed = Number(s.seed);
   return {
     side: clamp(s.side, 3, 8, 5),
     density: clamp(s.density, 0, 0.4, 0.14),
+    seed: isFinite(seed) && seed > 0 ? (seed >>> 0) : null,
     rules,
     types
   };
@@ -239,7 +241,7 @@ function doCreate(ws, msg) {
     density: s.density,
     rules: s.rules,
     types: s.types,
-    seed: Math.floor(Math.random() * 1e9)
+    seed: s.seed || Math.floor(Math.random() * 1e9)
   });
 
   const token = newToken();

@@ -1,4 +1,4 @@
-/* =========================================================
+﻿/* =========================================================
  * main.js —— 界面与交互
  * ========================================================= */
 (function () {
@@ -88,6 +88,8 @@
 
   function defaultSettings() {
     return {
+      mapMode: 'random',
+      defaultMap: 0,
       side: 5,
       density: 0.14,
       energy: ENGINE.DEFAULT_RULES.energyPerTurn,
@@ -125,6 +127,8 @@
     s.firstPlayer = Number(s.firstPlayer) === 1 ? 1 : 0;
     s.lastBonus = clampInt(s.lastBonus, 0, 8, 1);
     s.baseHp = clampInt(s.baseHp, 1, 20, 4);
+    s.mapMode = (s.mapMode === 'default') ? 'default' : 'random';
+    s.defaultMap = clampInt(s.defaultMap, 0, DEFAULT_MAPS.length - 1, 0);
     ENGINE.TYPE_LIST.forEach(function (id) {
       if (!s.types[id]) s.types[id] = cloneType(ENGINE.TYPES[id]);
       var t = s.types[id];
@@ -134,6 +138,23 @@
       t.cost = clampInt(t.cost, 1, 30, ENGINE.TYPES[id].cost);
     });
     return s;
+  }
+
+  var DEFAULT_MAPS = (window.MAPS && window.MAPS.DEFAULT_MAPS) || [{ name: '随机', density: 0.14, seed: 1 }];
+
+  // 地图来源：默认图用固定 边长/密度/种子；随机图交给随机种子
+  function mapFromSettings() {
+    var s = sanitizeSettings();
+    if (s.mapMode === 'default') {
+      var m = DEFAULT_MAPS[s.defaultMap] || DEFAULT_MAPS[0];
+      return {
+        side: (window.MAPS && window.MAPS.SIDE) || 5,
+        density: m.density,
+        seed: m.seed,
+        label: m.name
+      };
+    }
+    return { side: s.side, density: s.density, seed: null, label: null };
   }
 
   // 设置 -> 单局规则
@@ -157,7 +178,8 @@
     var saved = null;
     try { saved = JSON.parse(raw); } catch (e) { saved = null; }
     if (!saved || typeof saved !== 'object') return base;
-    ['side', 'density', 'energy', 'firstPlayer', 'lastBonus', 'baseHp'].forEach(function (k) {
+    ['side', 'density', 'energy', 'firstPlayer', 'lastBonus', 'baseHp',
+      'mapMode', 'defaultMap'].forEach(function (k) {
       if (saved[k] !== undefined) base[k] = saved[k];
     });
     ENGINE.TYPE_LIST.forEach(function (id) {
@@ -200,17 +222,19 @@
     app.mode = mode || app.mode || 'local';
     if (app.mode === 'online') return;   // 联机由服务端开局
 
-    var seed = Math.floor(Math.random() * 1e9) >>> 0;
-    var rng = ENGINE.mulberry32(seed);
+    var map = mapFromSettings();
+    if (map.seed == null) map.seed = Math.floor(Math.random() * 1e9) >>> 0;
+    var rng = ENGINE.mulberry32(map.seed);
     var rules = rulesFromSettings();
     app.game = new ENGINE.Game({
-      side: app.settings.side,
-      density: app.settings.density,
-      seed: seed,
+      side: map.side,
+      density: map.density,
+      seed: map.seed,
       rng: rng,
       rules: rules,
       types: app.settings.types
     });
+    app.mapLabel = map.label;
 
     // 单人模式：人执先手方，AI 执后手方
     if (app.mode === 'ai') {
@@ -238,7 +262,8 @@
 
     var g = app.game;
     addLog('模式：' + (app.mode === 'ai' ? '单人 · 对战 AI（你执' + g.players[app.humanSeat].name + '）' : '本地双人'), 'sys');
-    addLog('地图边长 ' + g.side + '（' + g.board.count + ' 格 / ' + g.board.obstacles + ' 处障碍）', 'sys');
+    addLog('地图：' + (map.label ? ('默认地图「' + map.label + '」') : '随机地图') +
+      ' · 边长 ' + g.side + '（' + g.board.count + ' 格 / ' + g.board.obstacles + ' 处障碍）', 'sys');
     addLog('先手：' + g.players[g.firstPlayer].name +
       '（' + g.rules.firstTurnEnergy[g.firstPlayer] + ' 点）· 后手：' +
       g.players[1 - g.firstPlayer].name +
@@ -857,7 +882,7 @@
 
     var g = app.game;
     addLog('联机对局 · 房号 ' + app.online.code + ' · 你是 ' + g.players[app.mySeat].name, 'sys');
-    addLog('地图边长 ' + g.side + '（' + g.board.count + ' 格 / ' + g.board.obstacles + ' 处障碍）', 'sys');
+    addLog('地图 · 边长 ' + g.side + '（' + g.board.count + ' 格 / ' + g.board.obstacles + ' 处障碍）', 'sys');
     addLog('第 ' + g.turn + ' 回合 · ' + g.players[g.active].name + ' 行动', 'turn');
 
     if (msg.event) applyRemoteEvent(msg.event);
@@ -1111,22 +1136,96 @@
 
   function syncSettingsForm() {
     if (!app.settings) return;
-    var root = ovSettings;
+    var root = $('ovSettings');
     Array.prototype.forEach.call(root.querySelectorAll('[data-path]'), function (el) {
       var v = getPath(app.settings, el.getAttribute('data-path'));
       if (document.activeElement !== el) el.value = (v == null ? '' : String(v));
     });
-    var dens = setDensity;
+    var dens = $('setDensity');
     Array.prototype.forEach.call(dens.querySelectorAll('button'), function (b) {
       b.classList.toggle('on', Number(b.getAttribute('data-d')) === Number(app.settings.density));
     });
-    var first = setFirst;
+    var first = $('setFirst');
     Array.prototype.forEach.call(first.querySelectorAll('button'), function (b) {
       b.classList.toggle('on', Number(b.getAttribute('data-p')) === Number(app.settings.firstPlayer));
     });
+
+    var isDefault = app.settings.mapMode === 'default';
+    Array.prototype.forEach.call($('setMapMode').querySelectorAll('button'), function (b) {
+      b.classList.toggle('on', (b.getAttribute('data-m') === 'default') === isDefault);
+    });
+    $('mapBasic').classList.toggle('hidden', isDefault);
+    $('mapPicker').classList.toggle('hidden', !isDefault);
+    if (isDefault) renderMapPicker();
+
     updateSettingHints();
   }
 
+  // 小地图预览：直接用同一套 Hex 数学画一遍
+  function drawMapPreview(canvas, side, density, seed) {
+    if (!canvas) return;
+    var dpr = Math.min(window.devicePixelRatio || 1, 2);
+    var w = 240, h = 200;
+    canvas.width = w * dpr;
+    canvas.height = h * dpr;
+    canvas.style.width = w + 'px';
+    canvas.style.height = h + 'px';
+    var ctx = canvas.getContext('2d');
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, w, h);
+
+    var g;
+    try { g = new ENGINE.Game({ side: side, density: density, seed: seed }); }
+    catch (e) { return; }
+
+    var s = Math.min((w - 16) / (3 * side - 1), (h - 16) / (Math.sqrt(3) * (2 * side - 1)));
+    var cx = w / 2, cy = h / 2;
+
+    g.board.order.forEach(function (c) {
+      var p = Hex.toPixel(c.q, c.r, s);
+      var x = cx + p.x, y = cy + p.y;
+      ctx.beginPath();
+      for (var i = 0; i < 6; i++) {
+        var a = Math.PI / 3 * i;
+        var px = x + s * 0.9 * Math.cos(a);
+        var py = y + s * 0.9 * Math.sin(a);
+        if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+      }
+      ctx.closePath();
+      ctx.fillStyle = c.obstacle ? 'rgba(104,126,158,0.75)' : 'rgba(45,212,191,0.12)';
+      ctx.fill();
+      ctx.lineWidth = 0.7;
+      ctx.strokeStyle = c.obstacle ? 'rgba(12,18,28,0.7)' : 'rgba(45,212,191,0.3)';
+      ctx.stroke();
+    });
+
+    // 标出两个基地
+    [{ c: g.board.baseA, col: g.players[0].color }, { c: g.board.baseB, col: g.players[1].color }]
+      .forEach(function (b) {
+        var p = Hex.toPixel(b.c.q, b.c.r, s);
+        ctx.beginPath();
+        ctx.arc(cx + p.x, cy + p.y, s * 0.42, 0, Math.PI * 2);
+        ctx.fillStyle = b.col;
+        ctx.fill();
+      });
+  }
+
+  function renderMapPicker() {
+    var btns = $('mapBtns');
+    if (!btns) return;
+    var html = '';
+    DEFAULT_MAPS.forEach(function (m, i) {
+      html += '<button type="button" class="map-btn' +
+        (app.settings.defaultMap === i ? ' on' : '') +
+        '" data-i="' + i + '" title="' + m.name + '">' + (i + 1) + '</button>';
+    });
+    btns.innerHTML = html;
+
+    var idx = clampInt(app.settings.defaultMap, 0, DEFAULT_MAPS.length - 1, 0);
+    var cur = DEFAULT_MAPS[idx];
+    $('mapNote').textContent = '地图 ' + (idx + 1) + '「' + cur.name + '」— ' + cur.desc;
+    drawMapPreview($('mapPreview'), (window.MAPS && window.MAPS.SIDE) || 5, cur.density, cur.seed);
+  }
   function updateSettingHints() {
     var s = app.settings;
     if (!s) return;
@@ -1143,13 +1242,25 @@
   function updateMenuSummary() {
     var s = app.settings;
     if (!s) return;
-    var side = clampInt(s.side, 3, 8, 5);
-    var dens = { 0: '无', 0.08: '低', 0.14: '中', 0.22: '高' };
-    var dl = dens[Number(s.density)];
-    if (!dl) dl = Math.round(Number(s.density || 0) * 100) + '%';
+    var isDefault = s.mapMode === 'default';
+    var idx = clampInt(s.defaultMap, 0, DEFAULT_MAPS.length - 1, 0);
+    var dm = DEFAULT_MAPS[idx];
+    var side = isDefault ? ((window.MAPS && window.MAPS.SIDE) || 5) : clampInt(s.side, 3, 8, 5);
+    var density = isDefault ? dm.density : Number(s.density);
+    var dens = { 0: '无', 0.08: '低', 0.1: '低', 0.14: '中', 0.18: '高', 0.22: '高' };
+    var dl = dens[density];
+    if (!dl) dl = Math.round((density || 0) * 100) + '%';
     var names = ['青方', '赤方'];
     var fp = Number(s.firstPlayer) === 1 ? 1 : 0;
-    menuSummary.innerHTML =
+
+    var mapChip = isDefault
+      ? '<span class="hi">地图 ' + (idx + 1) + '「' + dm.name + '」</span>'
+      : '<span>随机地图</span>';
+
+    var el = $('menuSummary');
+    if (!el) return;
+    el.innerHTML =
+      mapChip +
       '<span>边长 ' + side + ' · ' + Hex.cellCount(side) + ' 格</span>' +
       '<span>障碍 ' + dl + '</span>' +
       '<span>每回合 ' + clampInt(s.energy, 1, 9, 3) + ' 费</span>' +
@@ -1157,7 +1268,6 @@
       '<span>后手 +' + clampInt(s.lastBonus, 0, 8, 1) + ' 费</span>' +
       '<span>基地 ' + clampInt(s.baseHp, 1, 20, 4) + ' 血</span>';
   }
-
   function openSettings() {
     syncSettingsForm();
     showOverlay('ovSettings');
@@ -1181,7 +1291,7 @@
       updateMenuSummary();
       toast('已恢复默认设置');
     });
-    setDensity.addEventListener('click', function (e) {
+    $('setDensity').addEventListener('click', function (e) {
       var b = e.target.closest ? e.target.closest('button') : null;
       if (!b) return;
       app.settings.density = Number(b.getAttribute('data-d'));
@@ -1189,7 +1299,23 @@
       syncSettingsForm();
       updateMenuSummary();
     });
-    setFirst.addEventListener('click', function (e) {
+    $('setMapMode').addEventListener('click', function (e) {
+      var b = e.target.closest ? e.target.closest('button') : null;
+      if (!b) return;
+      app.settings.mapMode = (b.getAttribute('data-m') === 'default') ? 'default' : 'random';
+      saveSettings();
+      syncSettingsForm();
+      updateMenuSummary();
+    });
+    $('mapBtns').addEventListener('click', function (e) {
+      var b = e.target.closest ? e.target.closest('.map-btn') : null;
+      if (!b) return;
+      app.settings.defaultMap = Number(b.getAttribute('data-i'));
+      saveSettings();
+      syncSettingsForm();
+      updateMenuSummary();
+    });
+    $('setFirst').addEventListener('click', function (e) {
       var b = e.target.closest ? e.target.closest('button') : null;
       if (!b) return;
       app.settings.firstPlayer = Number(b.getAttribute('data-p'));
@@ -1197,7 +1323,7 @@
       syncSettingsForm();
       updateMenuSummary();
     });
-    ovSettings.addEventListener('input', function (e) {
+    $('ovSettings').addEventListener('input', function (e) {
       var el = e.target;
       var path = el.getAttribute ? el.getAttribute('data-path') : null;
       if (!path) return;
@@ -1208,7 +1334,7 @@
       updateSettingHints();
       updateMenuSummary();
     });
-    ovSettings.addEventListener('change', function (e) {
+    $('ovSettings').addEventListener('change', function (e) {
       var el = e.target;
       var path = el.getAttribute ? el.getAttribute('data-path') : null;
       if (!path) return;
@@ -1236,9 +1362,11 @@
     $('btnCreateRoom').addEventListener('click', function () {
       sanitizeSettings();
       var st = app.settings;
+      var mp = mapFromSettings();
       Net.create({
-        side: st.side,
-        density: st.density,
+        side: mp.side,
+        density: mp.density,
+        seed: mp.seed,
         lastBonus: st.lastBonus,
         rules: { firstPlayer: st.firstPlayer, energyPerTurn: st.energy, baseHp: st.baseHp },
         types: st.types

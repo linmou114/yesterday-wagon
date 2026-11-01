@@ -2,9 +2,11 @@
 global.window = global;
 require('../js/hex.js');
 require('../js/engine.js');
+require('../js/maps.js');
 
 const Hex = global.Hex;
 const ENGINE = global.ENGINE;
+const MAPS = global.MAPS;
 
 let pass = 0;
 let fail = 0;
@@ -46,14 +48,14 @@ for (let side = 3; side <= 7; side++) {
     const g = new ENGINE.Game({ side, density: 0.14, seed, rng });
     eq(g.board.count, Hex.cellCount(side), `边长 ${side} 的格子数`);
 
-    // 上下镜像对称
+    // 中心对称（旋转 180°）
     let symOK = true;
     g.board.cells.forEach((c) => {
       const m = Hex.mirror(c.q, c.r);
       const mc = g.board.cells.get(Hex.key(m.q, m.r));
       if (!mc || mc.obstacle !== c.obstacle) symOK = false;
     });
-    ok(symOK, `边长 ${side} 障碍物上下镜像`);
+    ok(symOK, `边长 ${side} 障碍物中心对称`);
 
     // 基地及其邻格不被障碍占
     let baseOK = true;
@@ -264,7 +266,7 @@ console.log('== 6. 随机对局压力测试 ==');
   }
   console.log(`  随机对局 ${games} 局、${actions} 次操作，其中 ${overCount} 局分出胜负`);
 }
-console.log('== 7. 镜像对称的公平性 ==');
+console.log('== 7. 中心对称的公平性 ==');
 {
   // 同一个种子下，双方开局可放格数应相同
   for (let side = 3; side <= 7; side++) {
@@ -273,6 +275,28 @@ console.log('== 7. 镜像对称的公平性 ==');
   }
 }
 
+console.log('== 7.5 8 张默认地图 ==');
+{
+  eq(MAPS.DEFAULT_MAPS.length, 8, '默认地图共 8 张');
+  MAPS.DEFAULT_MAPS.forEach((m, i) => {
+    const g = new ENGINE.Game({ side: MAPS.SIDE, density: m.density, seed: m.seed });
+    let sym = true;
+    g.board.cells.forEach((c) => {
+      const mm = Hex.mirror(c.q, c.r);
+      const mc = g.board.cells.get(Hex.key(mm.q, mm.r));
+      if (!mc || mc.obstacle !== c.obstacle) sym = false;
+    });
+    ok(sym, `默认地图 ${i + 1}「${m.name}」中心对称`);
+    eq(g.legalCells(0).size, 3, `默认地图 ${i + 1} 青方开局 3 个落点`);
+    eq(g.legalCells(1).size, 3, `默认地图 ${i + 1} 赤方开局 3 个落点`);
+    const again = new ENGINE.Game({ side: MAPS.SIDE, density: m.density, seed: m.seed });
+    let same = true;
+    g.board.cells.forEach((c, k) => {
+      if (c.obstacle !== again.board.cells.get(k).obstacle) same = false;
+    });
+    ok(same, `默认地图 ${i + 1} 同种子可复现`);
+  });
+}
 console.log('== 8. 结算不限次数 ==');
 {
   const g = new ENGINE.Game({ side: 5, density: 0, seed: 21 });

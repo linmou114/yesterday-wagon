@@ -1,4 +1,4 @@
-/* =========================================================
+﻿/* =========================================================
  * hex.js —— 六边形网格数学
  *
  * 采用「轴向坐标」(q, r)，地图是平顶（flat-top）小六边形拼成的
@@ -8,6 +8,7 @@
  *              y = size * sq3 * (r + q / 2)
  *
  * 大六边形区域： |q| <= N-1 且 |r| <= N-1 且 |q+r| <= N-1
+ * 障碍物按「中心对称」成对生成： (q,r) 与 (-q,-r)
  *   格子总数： 3N(N-1) + 1
  * ========================================================= */
 (function (root, factory) {
@@ -67,8 +68,9 @@
 
   function cellCount(side) { return 3 * side * (side - 1) + 1; }
 
-  // 上下对称的镜像：以水平中轴翻转（x 不变，y 取反）
-  function mirror(q, r) { return { q: q, r: -q - r }; }
+  // 中心对称（旋转 180°）：绕棋盘中心点反射
+  //   像素坐标下 (x, y) -> (-x, -y)，恰好把上下两个基地互换
+  function mirror(q, r) { return { q: -q, r: -r }; }
 
   // 从某格出发、只走非障碍格，能到达多少格 / 是否到达目标
   function floodFree(cells, startKey) {
@@ -133,7 +135,7 @@
         for (var attempt = 0; attempt < 60 && !ok; attempt++) {
           for (var i = 0; i < order.length; i++) order[i].obstacle = false;
 
-          // 成对放置，保证严格上下镜像
+          // 成对放置，保证严格中心对称（(q,r) 与 (-q,-r) 同时出现）
           var handled = new Set();
           for (var j = 0; j < order.length; j++) {
             var cc = order[j];

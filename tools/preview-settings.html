@@ -43,6 +43,11 @@
     <section class="board-shell">
       <canvas id="board"></canvas>
       <div class="board-toast" id="toast" aria-live="polite"></div>
+      <div class="draw-bar hidden" id="drawBar">
+        <span id="drawText">对手请求和棋</span>
+        <button class="btn small" id="btnDrawAccept" type="button">同意</button>
+        <button class="btn ghost small" id="btnDrawDecline" type="button">拒绝</button>
+      </div>
       <div class="inspect-card" id="inspect"></div>
     </section>
 
@@ -61,7 +66,7 @@
           <span><kbd>R</kbd> 结算</span>
           <span><kbd>空格</kbd> 结束回合</span>
         </div>
-        <button class="btn ghost btn-mini" id="btnResign" type="button">认输</button>
+
       </div>
     </div>
   </main>
@@ -69,10 +74,13 @@
   <!-- ============ 底部操作区 ============ -->
   <footer class="dock">
     <div class="shop" id="shop"></div>
-    <div class="dock-actions">
+    <div class="dock-actions" id="dockActions">
       <button class="btn primary" id="btnResolve" type="button">结算</button>
       <button class="btn" id="btnEnd" type="button">结束回合</button>
+      <button class="btn ghost" id="btnDraw" type="button">求和</button>
+      <button class="btn ghost" id="btnResign" type="button">认输</button>
     </div>
+    <div class="wait-bar hidden" id="waitBar">等待对手行动…</div>
   </footer>
 
 </div>
@@ -180,19 +188,35 @@
 
     <div class="set-group">
       <h3>地图</h3>
-      <div class="set-row">
-        <label for="setSide">边长</label>
-        <input id="setSide" class="num" type="number" data-path="side" min="3" max="8" step="1" inputmode="numeric" />
-        <span class="unit" id="setSideHint">61 格</span>
-      </div>
       <div class="set-row stack">
-        <label>障碍密度</label>
-        <div class="seg" id="setDensity">
-          <button type="button" data-d="0">无</button>
-          <button type="button" data-d="0.08">低</button>
-          <button type="button" data-d="0.14">中</button>
-          <button type="button" data-d="0.22">高</button>
+        <label>地图来源</label>
+        <div class="seg" id="setMapMode">
+          <button type="button" data-m="random">随机地图</button>
+          <button type="button" data-m="default">默认地图（8 张）</button>
         </div>
+      </div>
+
+      <div id="mapBasic">
+        <div class="set-row">
+          <label for="setSide">边长</label>
+          <input id="setSide" class="num" type="number" data-path="side" min="3" max="8" step="1" inputmode="numeric" />
+          <span class="unit" id="setSideHint">61 格</span>
+        </div>
+        <div class="set-row stack">
+          <label>障碍密度</label>
+          <div class="seg" id="setDensity">
+            <button type="button" data-d="0">无</button>
+            <button type="button" data-d="0.08">低</button>
+            <button type="button" data-d="0.14">中</button>
+            <button type="button" data-d="0.22">高</button>
+          </div>
+        </div>
+      </div>
+
+      <div id="mapPicker" class="hidden">
+        <div class="map-btns" id="mapBtns"></div>
+        <canvas id="mapPreview" class="map-preview"></canvas>
+        <p class="set-note" id="mapNote"></p>
       </div>
     </div>
 
@@ -309,6 +333,7 @@
 
 <script src="../js/hex.js"></script>
 <script src="../js/engine.js"></script>
+<script src="../js/maps.js"></script>
 <script src="../js/ai.js"></script>
 <script src="../js/net.js"></script>
 <script src="../js/renderer.js"></script>
