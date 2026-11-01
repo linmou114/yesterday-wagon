@@ -1,4 +1,4 @@
-/* =========================================================
+﻿/* =========================================================
  * engine.js —— 规则引擎（纯逻辑，不碰 DOM）
  *
  * 规则摘要
@@ -114,6 +114,7 @@
     this.nextId = 1;
     this.kills = [0, 0];         // 各方的击杀数（含断联移除）
     this.lost = [0, 0];          // 各方的损失数
+    this.maxSwing = [0, 0];      // 单次结算最多清掉对方几个棋子
 
     this.baseIds = [null, null];
     this.baseIds[0] = this.spawnBase(0, this.board.baseA).id;
@@ -328,6 +329,14 @@
       this.kills[1 - gone.owner] += 1;
     }, this);
 
+    // 3.5) 记录「单次结算最大击杀」
+    var perOwner = [0, 0];
+    removed.forEach(function (r) { perOwner[r.piece.owner] += 1; });
+    for (var oo = 0; oo < 2; oo++) {
+      var killer = 1 - oo;
+      if (perOwner[oo] > this.maxSwing[killer]) this.maxSwing[killer] = perOwner[oo];
+    }
+
     // 4) 胜负：大本营是否死亡
     var deadBases = [this.baseOf(0) ? false : true, this.baseOf(1) ? false : true];
     if (deadBases[0] || deadBases[1]) {
@@ -411,6 +420,7 @@
     g.nextId = this.nextId;
     g.kills = this.kills.slice();
     g.lost = this.lost.slice();
+    g.maxSwing = this.maxSwing.slice();
     g.baseIds = this.baseIds.slice();
     g.firstPlayer = this.firstPlayer;
     g.active = this.active;
@@ -447,6 +457,7 @@
       nextId: this.nextId,
       kills: this.kills,
       lost: this.lost,
+      maxSwing: this.maxSwing,
       baseIds: this.baseIds,
       firstPlayer: this.firstPlayer,
       active: this.active,
@@ -490,6 +501,7 @@
     g.nextId = s.nextId || 1;
     g.kills = (s.kills || [0, 0]).slice();
     g.lost = (s.lost || [0, 0]).slice();
+    g.maxSwing = (s.maxSwing || [0, 0]).slice();
     g.baseIds = (s.baseIds || [null, null]).slice();
     g.firstPlayer = s.firstPlayer;
     g.active = s.active;

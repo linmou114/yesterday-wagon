@@ -218,6 +218,7 @@
     app.inspect = null;
     app.effects.length = 0;
     app.stuckStamp = null;
+    app.startedAt = Date.now();
 
     els.log.innerHTML = '';
     app.renderer.setGame(app.game);
@@ -638,6 +639,7 @@
         if (txt && txt.trim() === 'ok') {
           tag.textContent = '在线';
           tag.className = 'mode-tag ok';
+          refreshStats();
         } else {
           tag.textContent = '不支持联机';
           tag.className = 'mode-tag bad';
@@ -655,10 +657,73 @@
   function prefillRoomCode() {
     var el = $('menuCode');
     if (!el) return;
+    // 邀请链接带 ?room=1234 时优先用它
+    var m = /[?&]room=(\d{4})/.exec(window.location.search || '');
+    if (m) {
+      el.value = m[1];
+      setTimeout(function () {
+        toast('已填入房号 ' + m[1] + '，点「加入房间」就能进');
+        el.focus();
+      }, 600);
+      return;
+    }
     try {
       var v = window.localStorage.getItem(CODE_KEY);
       if (v && /^\d{4}$/.test(v)) el.value = v;
     } catch (e) {}
+  }
+
+  // 首页显示「当前几局在打」
+  function refreshStats() {
+    var el = $('menuStats');
+    if (!el) return;
+    if (typeof location === 'undefined' || location.protocol === 'file:') return;
+    fetch(location.origin + '/stats', { cache: 'no-store' })
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (st) {
+        if (!st) { el.textContent = ''; return; }
+        if (!st.rooms && !st.waiting) {
+          el.innerHTML = '<span class="live">●</span> 服务器在线 · 现在没有房间，来开第一局';
+          return;
+        }
+        var parts = [];
+        if (st.rooms) parts.push(st.rooms + ' 局正在对战');
+        if (st.waiting) parts.push(st.waiting + ' 个房间在等人');
+        parts.push(st.players + ' 人在线');
+        el.innerHTML = '<span class="live">●</span> ' + parts.join(' · ');
+      })
+      .catch(function () { el.textContent = ''; });
+  }
+
+  // 复制邀请：http 页面没有 navigator.clipboard，必须留 textarea 兜底
+  function copyText(text, okMsg) {
+    function fallback() {
+      var ta = document.createElement('textarea');
+      ta.value = text;
+      ta.setAttribute('readonly', '');
+      ta.style.position = 'fixed';
+      ta.style.top = '-1000px';
+      document.body.appendChild(ta);
+      ta.select();
+      var ok = false;
+      try { ok = document.execCommand('copy'); } catch (e) { ok = false; }
+      document.body.removeChild(ta);
+      toast(ok ? (okMsg || '已复制') : '复制失败，请手动选中房号');
+    }
+    if (window.navigator && navigator.clipboard && window.isSecureContext) {
+      navigator.clipboard.writeText(text).then(function () {
+        toast(okMsg || '已复制');
+      }, fallback);
+      return;
+    }
+    fallback();
+  }
+
+  function inviteText() {
+    var code = app.online.code || $('roomCode').textContent || '';
+    var base = (typeof location !== 'undefined' && location.origin) ? location.origin : '';
+    var url = base + '/?room=' + code;
+    return '来下「昨日圆车」：' + url + '\n房号：' + code;
   }
 
   function menuJoin() {
@@ -745,6 +810,7 @@
   function startOnlineGame(msg) {
     app.mode = 'online';
     app.online.started = true;
+    app.startedAt = Date.now();
     app.mySeat = app.online.seat;
     app.game = ENGINE.Game.fromJSON(msg.state);
     app.selected = 'infantry';
@@ -856,10 +922,42 @@
       var name = g.players[g.winner].name;
       els.overTitle.textContent = name + ' 胜利';
       els.overTitle.className = 'over-title win-p' + g.winner;
-      els.overSub.textContent = '对手的大本营被摧毁。本局共进行 ' + g.turn + ' 回合，' +
-        g.players[0].name + ' ' + g.stats(0).kills + ' 杀 / ' + g.players[1].name + ' ' + g.stats(1).kills + ' 杀。';
+      els.overSub.textContent = '对手的大本营被摧毁。';
     }
+    renderOverStats(g);
     showOverlay('ovOver');
+  }
+
+  // 结束时的小战绩表
+  function renderOverStats(g) {
+    var el = $('overStats');
+    if (!el || !g) return;
+    var s0 = g.stats(0);
+    var s1 = g.stats(1);
+    var swing = g.maxSwing || [0, 0];
+    var rows = [
+      ['击杀', s0.kills, s1.kills],
+      ['损失', s0.lost, s1.lost],
+      ['剩余棋子', s0.units, s1.units],
+      ['单次最大击杀', swing[0], swing[1]]
+    ];
+    var html = '<table><thead><tr><th>对比</th>' +
+      '<th style="color:var(--p0)">青方</th><th style="color:var(--p1)">赤方</th></tr></thead><tbody>';
+    rows.forEach(function (r) {
+      var a = r[1], b = r[2];
+      var ca = a > b ? 'p0' : (a < b ? 'dim' : '');
+      var cb = b > a ? 'p1' : (b < a ? 'dim' : '');
+      html += '<tr><td>' + r[0] + '</td><td class="' + ca + '">' + a +
+        '</td><td class="' + cb + '">' + b + '</td></tr>';
+    });
+    html += '</tbody></table>';
+
+    var mins = 0;
+    if (app.startedAt) mins = Math.max(1, Math.round((Date.now() - app.startedAt) / 60000));
+    html += '<p class="over-meta">共 ' + g.turn + ' 回合' +
+      (mins ? ' · 约 ' + mins + ' 分钟' : '') +
+      ' · 边长 ' + g.side + '（' + g.board.count + ' 格）</p>';
+    el.innerHTML = html;
   }
 
   function toast(msg) {
@@ -1038,6 +1136,9 @@
     $('inpCode').addEventListener('keydown', function (e) {
       if (e.key === 'Enter') Net.join(this.value);
     });
+    $('btnCopyInvite').addEventListener('click', function () {
+      copyText(inviteText(), '邀请已复制，发给朋友吧');
+    });
     $('btnOnlineBack').addEventListener('click', function () {
       Net.leave();
       app.game = null;
@@ -1051,6 +1152,7 @@
       clearAITimer();
       $('btnResume').style.display = (app.game && !app.game.over) ? '' : 'none';
       updateMenuSummary();
+      refreshStats();
       showOverlay('ovMenu');
     });
     $('btnResume').addEventListener('click', function () { hideOverlay('ovMenu'); });

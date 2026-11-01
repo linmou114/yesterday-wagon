@@ -124,6 +124,7 @@
                placeholder="房号" autocomplete="off" />
         <button class="btn small" id="menuJoinBtn" type="button">加入房间</button>
       </div>
+      <p class="menu-stats" id="menuStats"></p>
 
       <button class="btn ghost menu-continue" id="btnResume" type="button" style="display:none">继续当前对局</button>
 
@@ -163,6 +164,7 @@
     <div id="onlRoom" class="hidden">
       <div class="code-big" id="roomCode">----</div>
       <p class="room-hint" id="roomHint">把房号发给朋友；两人都在线后自动开局</p>
+      <button class="btn primary copy-invite" id="btnCopyInvite" type="button">复制邀请（房号 + 网址）</button>
     </div>
 
     <div class="modal-actions">
@@ -294,9 +296,10 @@
 
 <!-- ============ 结算 ============ -->
 <div class="overlay hidden" id="ovOver">
-  <div class="modal" style="width:min(440px,100%)">
+  <div class="modal over-modal">
     <h1 class="over-title" id="overTitle">胜利</h1>
     <p class="over-sub" id="overSub"></p>
+    <div class="over-stats" id="overStats"></div>
     <div class="over-actions">
       <button class="btn primary" id="btnAgain" type="button">再来一局</button>
       <button class="btn ghost" id="btnSettings" type="button">改设置</button>

@@ -1,4 +1,4 @@
-/* =========================================================
+﻿/* =========================================================
  * server.js —— 昨日圆车 联机服务端
  *
  *   - 静态托管仓库根目录（index.html / css / js），所以整个项目只需要这一个进程
@@ -45,6 +45,26 @@ const server = http.createServer((req, res) => {
   if (pathname === '/health') {
     res.writeHead(200, { 'content-type': 'text/plain; charset=utf-8' });
     return res.end('ok');
+  }
+
+  // 首页「当前有几个房间」用
+  if (pathname === '/stats') {
+    let playing = 0;
+    let players = 0;
+    let waiting = 0;
+    rooms.forEach((room) => {
+      const online = room.seats.filter((c) => c.online).length;
+      if (online === 0) return;
+      players += online;
+      if (online >= 2) playing += 1;
+      else waiting += 1;
+    });
+    res.writeHead(200, {
+      'content-type': 'application/json; charset=utf-8',
+      'cache-control': 'no-store',
+      'access-control-allow-origin': '*'
+    });
+    return res.end(JSON.stringify({ rooms: playing, waiting, players }));
   }
   if (pathname === '/') pathname = '/index.html';
 

@@ -1,4 +1,4 @@
-/* 规则引擎自检（Node 运行，不参与网页） */
+﻿/* 规则引擎自检（Node 运行，不参与网页） */
 global.window = global;
 require('../js/hex.js');
 require('../js/engine.js');
@@ -191,6 +191,8 @@ console.log('== 4. 断联移除 ==');
   ok(res.killedByDamage.some((r) => r.piece.id === b.id), '中间的棋子被打死');
   ok(res.removedByCut.some((r) => r.piece.id === c.id), '断开的尾兵被移除');
   ok(!g.pieces.has(c.id) && g.pieces.has(a.id), 'a 仍连着基地、c 已消失');
+  eq(g.maxSwing[1], 2, '赤方单次结算清掉 2 个（1 击杀 + 1 断联），maxSwing 记录正确');
+  eq(g.maxSwing[0], 3, '赤方那 3 个孤立棋子也被断联移除，青方 maxSwing 记为 3');
 }
 console.log('== 5. 大本营与胜负 ==');
 {

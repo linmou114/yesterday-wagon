@@ -1,4 +1,4 @@
-/* 联机服务端自检：起一个真服务器，用两个 WebSocket 客户端打一场 */
+﻿/* 联机服务端自检：起一个真服务器，用两个 WebSocket 客户端打一场 */
 'use strict';
 
 const { spawn } = require('child_process');
@@ -87,6 +87,9 @@ function send(ws, msg) { ws.send(JSON.stringify(msg)); }
     ok(js.ok, '能取到 js/engine.js');
     const bad = await fetch(BASE + '/%2e%2e/%2e%2e/Windows/win.ini');
     ok(bad.status === 403 || bad.status === 404, '不能越界读仓库外的文件');
+
+    const stats = await (await fetch(BASE + '/stats')).json();
+    ok(typeof stats.rooms === 'number' && typeof stats.players === 'number', '/stats 返回房间统计');
 
     console.log('== 建房 / 加入 ==');
     const a = await connect();
