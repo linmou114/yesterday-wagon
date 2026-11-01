@@ -114,7 +114,58 @@ npm start            # = node server/server.js，默认 http://localhost:3000
 
 ---
 
-## 6. 部署到 Render（联机版）
+## 6. 部署到自己的服务器（阿里云 / 任意 Linux）
+
+> 自己的服务器**不会休眠**、国内访问快，代价是每月花钱、绑域名要备案。
+> 只用 **IP + 端口** 访问**不需要备案**。
+
+### 一次性准备
+
+1. 买一台轻量应用服务器（2 核 2G 起），镜像选 **Ubuntu 22.04 / 24.04**
+2. 控制台「防火墙」放行 **TCP 3000**
+3. 把 `yesterday-wagon-server.zip` 传到 `/root/`
+4. 解压并部署：
+
+```bash
+cd /root
+python3 -m zipfile -e yesterday-wagon-server.zip .
+cd yesterday-wagon
+bash deploy-server.sh
+```
+
+脚本自动完成：装 Node（npmmirror 国内源）→ 装依赖（淘宝源）→ 注册 systemd 服务（开机自启 + 崩溃重启）→ 放行防火墙 → 本地自检。
+
+### 之后更新代码
+
+```bash
+# 上传新包覆盖 /root/yesterday-wagon-server.zip 后
+cd /root/yesterday-wagon
+bash update-server.sh
+```
+
+> ⚠️ **别用 `rm -rf` 删项目目录再解压**：压缩包里不含 `node_modules`，删掉后服务会起不来
+> （`Cannot find module 'ws'`）。`update-server.sh` 就是为此写的——只覆盖代码，保留依赖。
+
+### 常用命令
+
+| 命令 | 作用 |
+| --- | --- |
+| `systemctl status yesterday-wagon` | 看服务状态 |
+| `journalctl -u yesterday-wagon -f` | 实时日志 |
+| `systemctl restart yesterday-wagon` | 重启 |
+| `curl -sS http://127.0.0.1:3000/health` | 本地健康检查 |
+| `curl -sS http://127.0.0.1:3000/stats` | 当前房间数 |
+
+### 换端口
+
+```bash
+PORT=8080 bash deploy-server.sh
+```
+
+（记得同步在控制台放行新端口）
+
+---
+## 7. 部署到 Render（免费托管）
 
 > Render 是「把 Git 仓库变成一台常驻服务器」的托管平台：推代码 → 自动 `npm install && npm start` → 给你 `https://xxx.onrender.com`。
 
@@ -170,12 +221,12 @@ deploy.cmd -SkipGitHub        :: 只本地提交，不推送
 
 ### 也可以只部署静态版
 
-不用联机的话，`index.html + css + js` 直接丢给 Netlify Drop / GitHub Pages / Vercel 就行（见第 7 节）。
+不用联机的话，`index.html + css + js` 直接丢给 Netlify Drop / GitHub Pages / Vercel 就行（见第 8 节）。
 用本地文件（`file://`）打开时联机会提示「本地文件打开时不能联机」，本地双人和 AI 模式照常玩。
 
 ---
 
-## 7. 只发布静态版（不用联机）
+## 8. 只发布静态版（不用联机）
 
 1. **Netlify Drop**：把文件夹拖到 <https://app.netlify.com/drop>，立刻得到网址
 2. **GitHub Pages**：仓库 → Settings → Pages → Source: Deploy from a branch → `main` / `(root)`
@@ -190,7 +241,7 @@ deploy.cmd -SkipGitHub        :: 只本地提交，不推送
 
 ---
 
-## 8. 自检与调试
+## 9. 自检与调试
 
 ```bash
 node tools/selftest.js        # 规则自检（525 项）：对称性、伤害判定、断联、结算次数、自定义数值、胜负
@@ -211,7 +262,7 @@ HexFront.resolve()         // 触发一次结算（仅本地/AI 模式）
 
 ---
 
-## 9. 关于平衡性（实测数据，仅供参考）
+## 10. 关于平衡性（实测数据，仅供参考）
 
 `node tools/balance.js 3 4 5 6`（贪心 AI 互打，每档 40 局）：
 
@@ -229,6 +280,6 @@ HexFront.resolve()         // 触发一次结算（仅本地/AI 模式）
 
 ---
 
-## 10. 版权
+## 11. 版权
 
 全部画面由 Canvas 代码绘制，没有使用任何外部图片、字体、音频资源，可直接用于课程展示。
