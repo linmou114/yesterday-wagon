@@ -1,11 +1,11 @@
-/* 生成「截图验收用」页面（tools/ 下，不参与发布）
+﻿/* 生成「截图验收用」页面（tools/ 下，不参与发布）
  *   node tools/mkpreview.js
  */
 const fs = require('fs');
 const path = require('path');
 
 const root = path.join(__dirname, '..');
-const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
+const html = fs.readFileSync(path.join(root, 'game.html'), 'utf8');
 
 function build(name, driver) {
   const page = html
@@ -47,7 +47,7 @@ const helpers = `
 
 build('preview-board.html', `
 window.addEventListener('load', function () {
-  document.getElementById('btnModeLocal').click();
+  window.HexFront.start('local');
   console.log('board preview ready, cells=' + window.HexFront.app.game.board.count);
 });
 `);
@@ -57,7 +57,7 @@ build('preview-mid.html', `
 window.addEventListener('load', function () {
   var HF = window.HexFront;
   var Hex = window.Hex;
-  document.getElementById('btnModeLocal').click();
+  window.HexFront.start('local');
   var g = HF.app.game;
   ${helpers}
   // 用真实指针事件点一个落点（验证坐标拾取 + 点击放置）
@@ -84,7 +84,7 @@ build('preview-unit.html', `
 window.addEventListener('load', function () {
   var HF = window.HexFront;
   var Hex = window.Hex;
-  document.getElementById('btnModeLocal').click();
+  window.HexFront.start('local');
   var g = HF.app.game;
   ${helpers}
   put(g, g.active, 'infantry', 2); HF.refresh(); HF.endTurn();
@@ -103,7 +103,7 @@ build('preview-over.html', `
 window.addEventListener('load', function () {
   var HF = window.HexFront;
   var Hex = window.Hex;
-  document.getElementById('btnModeLocal').click();
+  window.HexFront.start('local');
   var g = HF.app.game;
   ${helpers}
 
@@ -162,7 +162,7 @@ build('preview-fight.html', `
 window.addEventListener('load', function () {
   var HF = window.HexFront;
   var Hex = window.Hex;
-  document.getElementById('btnModeLocal').click();
+  window.HexFront.start('local');
   var g = HF.app.game;
   function force(owner, kind, q, r) {
     var t = ENGINE.TYPES[kind];
@@ -191,7 +191,7 @@ window.addEventListener('load', function () {
 // 规则弹窗
 build('preview-rules.html', `
 window.addEventListener('load', function () {
-  document.getElementById('btnModeLocal').click();
+  window.HexFront.start('local');
   document.getElementById('btnRules').click();
   console.log('rules open');
 });
@@ -202,7 +202,7 @@ window.addEventListener('load', function () {
   var errors = [];
   window.onerror = function (m, s, l, c, err) { errors.push(String(m) + ' @' + l + ':' + c); };
   var HF = window.HexFront;
-  document.getElementById('btnModeLocal').click();
+  window.HexFront.start('local');
   var g = HF.app.game;
   var actions = 0, turnGuard = 0;
   while (!g.over && turnGuard < 400) {
@@ -237,9 +237,17 @@ window.addEventListener('load', function () {
 });
 `);
 // 设置面板
-build('preview-settings.html', `
+{
+  const menuHtml = fs.readFileSync(path.join(root, 'index.html'), 'utf8')
+    .replace(/href="css\//g, 'href="../css/')
+    .replace(/src="js\//g, 'src="../js/');
+  const driver = `
 window.addEventListener('load', function () {
   document.getElementById('btnOpenSettings').click();
   console.log('settings open');
 });
-`);
+`;
+  fs.writeFileSync(path.join(__dirname, 'preview-settings.html'),
+    menuHtml.replace('</body>', '<script>\n' + driver + '\n</script>\n</body>'), 'utf8');
+  console.log('written tools/preview-settings.html (from index.html)');
+}

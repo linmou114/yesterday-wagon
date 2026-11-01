@@ -38,15 +38,19 @@ npm start            # = node server/server.js，默认 http://localhost:3000
 
 ```
 昨日圆车/
-├─ index.html          页面骨架：开始菜单 / 棋盘 / 设置 / 规则 / 联机面板
+├─ index.html          开始菜单页（模式选择 / 设置 / 规则）
+├─ game.html           对局页（棋盘 + 双方面板 + 操作区）
 ├─ css/style.css       全部样式（深色主题 + 响应式）
 ├─ js/hex.js           六边形网格数学（浏览器/Node 双用）
 ├─ js/engine.js        规则引擎（浏览器/Node 双用，唯一真相来源）
 ├─ js/ai.js            内置 AI（评估函数 + 一步前瞻）
 ├─ js/tutorial.js      新手教学关卡（7 关，纯数据+判定，可在 Node 测）
 ├─ js/net.js           联机客户端（WebSocket、自动重连、心跳保活）
+├─ js/settings.js      设置数据模型（两个页面共用）
+├─ js/rules.js         规则文案（两个页面共用）
+├─ js/menu.js          菜单页交互（设置表单、地图预览、跳转）
 ├─ js/renderer.js      Canvas 绘制层
-├─ js/main.js          界面与交互（四种模式的调度都在这里）
+├─ js/main.js          对局页交互（四种模式的调度都在这里）
 ├─ server/server.js    联机服务端（静态托管 + WebSocket 房间）
 ├─ package.json        依赖与 start 脚本
 ├─ render.yaml         Render 一键部署配置
@@ -58,6 +62,22 @@ npm start            # = node server/server.js，默认 http://localhost:3000
 
 ---
 
+## 2.5 两个页面
+
+拆成两个独立页面，各有独立 URL，可以直接分享/收藏：
+
+| 页面 | 地址 | 内容 |
+| --- | --- | --- |
+| 开始菜单 | `/`（`index.html`） | 四种模式入口、快速加入房号、设置、规则、服务器状态与房间数 |
+| 对局 | `/game.html` | 棋盘、双方状态面板、战报、兵种商店、操作按钮 |
+
+对局页靠 URL 参数启动：`game.html?mode=local|ai|online|tutorial`，联机还能带 `&code=1234` 直接进房。
+从对局页点「主菜单」会**把当前棋局存进 sessionStorage**，回到菜单后按钮变成「继续当前对局」。
+
+两个页面共用的部分单独抽了出来：`js/settings.js`（设置数据）和 `js/rules.js`（规则文案），
+避免同一份内容两边各写一遍。
+
+---
 ## 3. 四种模式
 
 | 模式 | 谁在跑规则 | 说明 |

@@ -697,6 +697,27 @@ input[type="range"]::-moz-range-thumb {
 .over-sub { text-align: center; font-size: 13px; color: var(--muted); line-height: 1.7; margin: 0 0 22px; }
 .over-actions { display: flex; gap: 10px; justify-content: center; }
 
+/* ---------- 独立的菜单页（index.html） ---------- */
+
+.page-menu {
+  min-height: 100dvh;
+  display: grid;
+  place-items: center;
+  padding: 26px 16px 34px;
+  background:
+    radial-gradient(900px 520px at 50% -10%, rgba(45, 212, 191, 0.14), transparent 70%),
+    radial-gradient(700px 420px at 88% 104%, rgba(251, 191, 36, 0.08), transparent 72%),
+    #070b12;
+}
+
+.menu-page { width: min(500px, 100%); }
+
+.modal.menu.menu-standalone {
+  width: 100%;
+  max-height: none;
+  overflow: visible;
+}
+
 /* ---------- 开始菜单 ---------- */
 
 .modal.menu {

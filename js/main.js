@@ -45,8 +45,6 @@
     els.turnChip = $('turnChip');
     els.btnResolve = $('btnResolve');
     els.btnEnd = $('btnEnd');
-    els.setUnitRows = $('setUnitRows');
-    els.shop = els.shop || $('shop');
     els.dockActions = $('dockActions');
     els.waitBar = $('waitBar');
     els.drawBar = $('drawBar');
@@ -66,15 +64,79 @@
       };
     });
 
-    renderUnitRows();
     bindEvents();
-    syncSettingsForm();
-    updateMenuSummary();
-    prefillRoomCode();
-    checkServerStatus();
-    showOverlay('ovMenu');
+
+    var params = parseQuery();
+    if (params.resume === '1' && restoreResume()) return;
+    if (params.mode === 'tutorial') { startTutorial(); return; }
+    if (params.mode === 'online') { openOnline(params.code); return; }
+    if (params.mode === 'ai' || params.mode === 'local') { startGame(params.mode); return; }
+
+    // 没有参数（直接打开 game.html）→ 回菜单
+    location.replace('index.html');
   }
 
+  function parseQuery() {
+    var out = {};
+    var q = (location.search || '').replace(/^\?/, '');
+    if (!q) return out;
+    q.split('&').forEach(function (pair) {
+      if (!pair) return;
+      var eq = pair.indexOf('=');
+      var k = eq < 0 ? pair : pair.slice(0, eq);
+      var v = eq < 0 ? '' : pair.slice(eq + 1);
+      out[decodeURIComponent(k)] = decodeURIComponent(v);
+    });
+    return out;
+  }
+
+  /* ---------------- 继续上次对局（菜单页跳过来） ---------------- */
+
+  var RESUME_KEY = 'yesterday-bus.resume.v1';
+
+  function saveResume() {
+    var g = app.game;
+    if (!g || g.over || app.mode === 'online') return;
+    try {
+      window.sessionStorage.setItem(RESUME_KEY, JSON.stringify({
+        mode: app.mode,
+        at: Date.now(),
+        game: g.toJSON()
+      }));
+    } catch (e) {}
+  }
+
+  function restoreResume() {
+    var data = null;
+    try {
+      var raw = window.sessionStorage.getItem(RESUME_KEY);
+      if (raw) data = JSON.parse(raw);
+    } catch (e) { data = null; }
+    if (!data || !data.game || data.game.over) {
+      try { window.sessionStorage.removeItem(RESUME_KEY); } catch (e) {}
+      return false;
+    }
+    try {
+      app.mode = (data.mode === 'ai') ? 'ai' : 'local';
+      app.game = ENGINE.Game.fromJSON(data.game);
+      if (app.mode === 'ai') {
+        app.humanSeat = app.game.firstPlayer;
+        app.aiSeat = 1 - app.game.firstPlayer;
+      }
+      app.renderer.setGame(app.game);
+      app.selected = 'infantry';
+      app.effects.length = 0;
+      app.startedAt = Date.now();
+      els.log.innerHTML = '';
+      addLog('已恢复上次的对局（第 ' + app.game.turn + ' 回合）', 'sys');
+      refresh();
+      maybeAITurn();
+      return true;
+    } catch (e) {
+      toast('恢复对局失败，已回主菜单');
+      return false;
+    }
+  }
   function selectedAffordable() {
     var g = app.game;
     if (!g || g.over) return false;
@@ -82,140 +144,20 @@
     return !!t && g.energy >= t.cost;
   }
 
-  /* ---------------- 设置 ---------------- */
+  /* ---------------- 设置（数据模型在 js/settings.js） ---------------- */
 
-  var STORE_KEY = 'yesterday-bus.settings.v1';
+  var SET = window.SET;
+  var DEFAULT_MAPS = SET.DEFAULT_MAPS;
 
-  function defaultSettings() {
-    return {
-      mapMode: 'random',
-      defaultMap: 0,
-      side: 5,
-      density: 0.14,
-      energy: ENGINE.DEFAULT_RULES.energyPerTurn,
-      firstPlayer: ENGINE.DEFAULT_RULES.firstPlayer,
-      lastBonus: 1,
-      baseHp: ENGINE.DEFAULT_RULES.baseHp,
-      types: {
-        infantry: cloneType(ENGINE.TYPES.infantry),
-        tank: cloneType(ENGINE.TYPES.tank),
-        artillery: cloneType(ENGINE.TYPES.artillery)
-      }
-    };
-  }
-
-  function cloneType(t) {
-    return { hp: t.hp, atk: t.atk, range: t.range, cost: t.cost };
-  }
-
-  function clampNum(v, min, max, fallback) {
-    var n = Number(v);
-    if (!isFinite(n)) return fallback;
-    return Math.min(max, Math.max(min, n));
-  }
-
-  function clampInt(v, min, max, fallback) {
-    return Math.round(clampNum(v, min, max, fallback));
-  }
-
-  // 把设置修正到合法范围（开局前跑一次，避免手输奇怪的值）
-  function sanitizeSettings() {
-    var s = app.settings;
-    s.side = clampInt(s.side, 3, 8, 5);
-    s.density = clampNum(s.density, 0, 0.4, 0.14);
-    s.energy = clampInt(s.energy, 1, 9, 3);
-    s.firstPlayer = Number(s.firstPlayer) === 1 ? 1 : 0;
-    s.lastBonus = clampInt(s.lastBonus, 0, 8, 1);
-    s.baseHp = clampInt(s.baseHp, 1, 20, 4);
-    s.mapMode = (s.mapMode === 'default') ? 'default' : 'random';
-    s.defaultMap = clampInt(s.defaultMap, 0, DEFAULT_MAPS.length - 1, 0);
-    ENGINE.TYPE_LIST.forEach(function (id) {
-      if (!s.types[id]) s.types[id] = cloneType(ENGINE.TYPES[id]);
-      var t = s.types[id];
-      t.hp = clampInt(t.hp, 1, 30, ENGINE.TYPES[id].hp);
-      t.atk = clampInt(t.atk, 0, 20, ENGINE.TYPES[id].atk);
-      t.range = clampInt(t.range, 0, 6, ENGINE.TYPES[id].range);
-      t.cost = clampInt(t.cost, 1, 30, ENGINE.TYPES[id].cost);
-    });
-    return s;
-  }
-
-  var DEFAULT_MAPS = (window.MAPS && window.MAPS.DEFAULT_MAPS) || [{ name: '随机', density: 0.14, seed: 1 }];
-
-  // 地图来源：默认图用固定 边长/密度/种子；随机图交给随机种子
-  function mapFromSettings() {
-    var s = sanitizeSettings();
-    if (s.mapMode === 'default') {
-      var m = DEFAULT_MAPS[s.defaultMap] || DEFAULT_MAPS[0];
-      return {
-        side: (window.MAPS && window.MAPS.SIDE) || 5,
-        density: m.density,
-        seed: m.seed,
-        label: m.name
-      };
-    }
-    return { side: s.side, density: s.density, seed: null, label: null };
-  }
-
-  // 设置 -> 单局规则
-  function rulesFromSettings() {
-    var s = sanitizeSettings();
-    var fe = [s.energy, s.energy];
-    fe[1 - s.firstPlayer] = s.energy + s.lastBonus;
-    return {
-      baseHp: s.baseHp,
-      energyPerTurn: s.energy,
-      firstPlayer: s.firstPlayer,
-      firstTurnEnergy: fe
-    };
-  }
-
-  function loadSettings() {
-    var base = defaultSettings();
-    var raw = null;
-    try { raw = window.localStorage.getItem(STORE_KEY); } catch (e) { raw = null; }
-    if (!raw) return base;
-    var saved = null;
-    try { saved = JSON.parse(raw); } catch (e) { saved = null; }
-    if (!saved || typeof saved !== 'object') return base;
-    ['side', 'density', 'energy', 'firstPlayer', 'lastBonus', 'baseHp',
-      'mapMode', 'defaultMap'].forEach(function (k) {
-      if (saved[k] !== undefined) base[k] = saved[k];
-    });
-    ENGINE.TYPE_LIST.forEach(function (id) {
-      var st = saved.types && saved.types[id];
-      if (!st) return;
-      ['hp', 'atk', 'range', 'cost'].forEach(function (f) {
-        if (st[f] !== undefined) base.types[id][f] = st[f];
-      });
-    });
-    return base;
-  }
-
-  function saveSettings() {
-    try { window.localStorage.setItem(STORE_KEY, JSON.stringify(app.settings)); } catch (e) {}
-  }
-
-  function setPath(obj, path, value) {
-    var parts = path.split('.');
-    var cur = obj;
-    for (var i = 0; i < parts.length - 1; i++) {
-      if (!cur[parts[i]]) cur[parts[i]] = {};
-      cur = cur[parts[i]];
-    }
-    cur[parts[parts.length - 1]] = value;
-  }
-
-  function getPath(obj, path) {
-    var parts = path.split('.');
-    var cur = obj;
-    for (var i = 0; i < parts.length; i++) {
-      if (cur == null) return undefined;
-      cur = cur[parts[i]];
-    }
-    return cur;
-  }
-
+  function loadSettings() { return SET.load(); }
+  function saveSettings() { SET.save(app.settings); }
+  function sanitizeSettings() { return SET.sanitize(app.settings); }
+  function mapFromSettings() { return SET.mapOf(app.settings); }
+  function rulesFromSettings() { return SET.rulesOf(app.settings); }
+  function clampInt(v, a, b, f) { return SET.clampInt(v, a, b, f); }
+  function clampNum(v, a, b, f) { return SET.clampNum(v, a, b, f); }
+  function setPath(o, p, v) { return SET.setPath(o, p, v); }
+  function getPath(o, p) { return SET.getPath(o, p); }
   /* ---------------- 开局 ---------------- */
 
   function startGame(mode) {
@@ -251,6 +193,7 @@
     app.drawByAgreement = false;
     app.drawPending = false;
     hideDrawBar();
+    try { window.sessionStorage.removeItem('yesterday-bus.resume.v1'); } catch (e) {}
 
     els.log.innerHTML = '';
     app.renderer.setGame(app.game);
@@ -678,95 +621,9 @@
     showGameOver();
   }
 
-  /* ---------------- 入口页：服务器状态 / 快速加入 ---------------- */
+  /* ---------------- 复制邀请 ---------------- */
 
-  var CODE_KEY = 'yesterday-bus.lastcode';
-
-  function checkServerStatus() {
-    var tag = $('srvTag');
-    if (!tag) return;
-    if (typeof location !== 'undefined' && location.protocol === 'file:') {
-      tag.textContent = '本地模式';
-      tag.className = 'mode-tag';
-      return;
-    }
-    tag.textContent = '检测中';
-    tag.className = 'mode-tag';
-
-    var done = false;
-    var timer = setTimeout(function () {
-      if (done) return;
-      done = true;
-      tag.textContent = '连接超时';
-      tag.className = 'mode-tag bad';
-    }, 4000);
-
-    fetch(location.origin + '/health', { cache: 'no-store' })
-      .then(function (r) { return r.ok ? r.text() : null; })
-      .then(function (txt) {
-        if (done) return;
-        done = true;
-        clearTimeout(timer);
-        if (txt && txt.trim() === 'ok') {
-          tag.textContent = '在线';
-          tag.className = 'mode-tag ok';
-          refreshStats();
-        } else {
-          tag.textContent = '不支持联机';
-          tag.className = 'mode-tag bad';
-        }
-      })
-      .catch(function () {
-        if (done) return;
-        done = true;
-        clearTimeout(timer);
-        tag.textContent = '离线';
-        tag.className = 'mode-tag bad';
-      });
-  }
-
-  function prefillRoomCode() {
-    var el = $('menuCode');
-    if (!el) return;
-    // 邀请链接带 ?room=1234 时优先用它
-    var m = /[?&]room=(\d{4})/.exec(window.location.search || '');
-    if (m) {
-      el.value = m[1];
-      setTimeout(function () {
-        toast('已填入房号 ' + m[1] + '，点「加入房间」就能进');
-        el.focus();
-      }, 600);
-      return;
-    }
-    try {
-      var v = window.localStorage.getItem(CODE_KEY);
-      if (v && /^\d{4}$/.test(v)) el.value = v;
-    } catch (e) {}
-  }
-
-  // 首页显示「当前几局在打」
-  function refreshStats() {
-    var el = $('menuStats');
-    if (!el) return;
-    if (typeof location === 'undefined' || location.protocol === 'file:') return;
-    fetch(location.origin + '/stats', { cache: 'no-store' })
-      .then(function (r) { return r.ok ? r.json() : null; })
-      .then(function (st) {
-        if (!st) { el.textContent = ''; return; }
-        if (!st.rooms && !st.waiting) {
-          el.innerHTML = '<span class="live">●</span> 服务器在线 · 现在没有房间，来开第一局';
-          return;
-        }
-        var parts = [];
-        if (st.rooms) parts.push(st.rooms + ' 局正在对战');
-        if (st.waiting) parts.push(st.waiting + ' 个房间在等人');
-        parts.push(st.players + ' 人在线');
-        el.innerHTML = '<span class="live">●</span> ' + parts.join(' · ');
-      })
-      .catch(function () { el.textContent = ''; });
-  }
-
-  // 复制邀请：http 页面没有 navigator.clipboard，必须留 textarea 兜底
+  // http 页面没有 navigator.clipboard，必须留 textarea 兜底
   function copyText(text, okMsg) {
     function fallback() {
       var ta = document.createElement('textarea');
@@ -793,42 +650,38 @@
   function inviteText() {
     var code = app.online.code || $('roomCode').textContent || '';
     var base = (typeof location !== 'undefined' && location.origin) ? location.origin : '';
-    var url = base + '/?room=' + code;
+    var url = base + '/game.html?mode=online&code=' + code;
     return '来下「昨日圆车」：' + url + '\n房号：' + code;
-  }
-
-  function menuJoin() {
-    var el = $('menuCode');
-    var code = el ? String(el.value || '').trim() : '';
-    if (!/^\d{4}$/.test(code)) {
-      toast('请输入 4 位房号');
-      if (el) el.focus();
-      return;
-    }
-    openOnline();
-    Net.join(code);
   }
   /* ---------------- 联机 ---------------- */
 
-  function openOnline() {
-    app.online.started = false;
-    app.online.code = null;
-    app.online.seat = -1;
+  function openOnline(code) {
+    app.mode = 'online';
+    app.game = null;
+    app.online = { code: null, seat: -1, seats: [false, false], started: false };
+    app.mySeat = 0;
+    els.log.innerHTML = '';
+    showOverlay('ovOnline');
+    $('onlStatus').textContent = '正在连接服务器…';
     $('onlChooser').classList.remove('hidden');
     $('onlRoom').classList.add('hidden');
-    $('onlStatus').textContent = '正在连接服务器…';
-    $('onlStatus').className = 'onl-status';
-    showOverlay('ovOnline');
-
-    Net.start({
+    if (typeof code === 'string' && /^\d{4}$/.test(code)) {
+      $('inpCode').value = code;
+      app.online.pendingJoin = code;
+    }
+    if (!Net.start({
       status: onNetStatus,
       room: onNetRoom,
-      state: onNetState,
       peer: onNetPeer,
-      error: onNetError
-    });
+      state: onNetState,
+      err: onNetError
+    })) {
+      $('onlStatus').textContent = '这个页面不是从服务器打开的，联机不可用';
+    } else if (app.online.pendingJoin) {
+      Net.join(app.online.pendingJoin);
+      delete app.online.pendingJoin;
+    }
   }
-
   function onNetStatus(st) {
     var el = $('onlStatus');
     if (!el) return;
@@ -885,6 +738,7 @@
     app.drawByAgreement = false;
     app.drawPending = false;
     hideDrawBar();
+    try { window.sessionStorage.removeItem('yesterday-bus.resume.v1'); } catch (e) {}
     app.mySeat = app.online.seat;
     app.game = ENGINE.Game.fromJSON(msg.state);
     app.selected = 'infantry';
@@ -992,47 +846,25 @@
   }
   /* ---------------- 主菜单 / 新对局 ---------------- */
 
-  // 回到主菜单（联机会先退出房间；本地/单人保留棋局，可「继续当前对局」）
+  // 回到主菜单：本地/单人先把棋局存到 sessionStorage，菜单页会显示「继续当前对局」
   function goMenu() {
     var g = app.game;
     if (g && !g.over) {
       var who = g.players[g.active] ? g.players[g.active].name : '';
-      if (!window.confirm('第 ' + g.turn + ' 回合还在进行中（轮到 ' + who + '），确定回主菜单？' +
-          (app.mode === 'online' ? '\n联机对局会被退出。' : ''))) return;
+      var ask = '第 ' + g.turn + ' 回合还在进行中（轮到 ' + who + '），确定回主菜单？';
+      if (app.mode === 'online') ask += '\n联机对局会被退出。';
+      else ask += '\n进度会保存，可以随时继续。';
+      if (!window.confirm(ask)) return;
     }
 
     clearAITimer();
-
     if (app.mode === 'online') {
       Net.leave();
-      app.online = { code: null, seat: -1, seats: [false, false], started: false };
-      app.game = null;
-      app.mode = 'local';
+    } else {
+      saveResume();
     }
-    if (app.mode === 'tutorial') {
-      app.tutorial = null;
-      app.tutTypes = null;
-      $('tutPanel').classList.add('hidden');
-      if ($('quickRef')) $('quickRef').classList.remove('hidden');
-      app.game = null;
-      app.mode = 'local';
-    }
-
-    hideOverlay('ovOver');
-    hideOverlay('ovRules');
-    hideOverlay('ovSettings');
-    hideOverlay('ovOnline');
-    hideOverlay('ovTutDone');
-    hideDrawBar();
-
-    var resumable = !!(app.game && !app.game.over);
-    $('btnResume').style.display = resumable ? '' : 'none';
-    updateMenuSummary();
-    refreshStats();
-    refresh();
-    showOverlay('ovMenu');
+    location.href = 'index.html';
   }
-
   // 按当前设置重开一局（联机不能单方面重开）
   function restartGame() {
     var mode = app.mode;
@@ -1108,9 +940,7 @@
     if ($('quickRef')) $('quickRef').classList.remove('hidden');
     hideOverlay('ovTutDone');
     app.game = null;
-    refresh();
-    updateMenuSummary();
-    showOverlay('ovMenu');
+    location.href = 'index.html';
   }
 
   function renderTutorial() {
@@ -1316,251 +1146,17 @@
     els.log.scrollTop = els.log.scrollHeight;
   }
 
-  /* ---------------- 设置界面 ---------------- */
+  /* ---------------- 设置界面 / 菜单摘要（都在菜单页 index.html 里） ---------------- */
 
-  var SET_FIELDS = {
-    hp: [1, 30], atk: [0, 20], range: [0, 6], cost: [1, 30]
-  };
-
-  function renderUnitRows() {
-    var html = '';
-    ENGINE.TYPE_LIST.forEach(function (id) {
-      var def = ENGINE.TYPES[id];
-      html += '<tr><td><b>' + def.name + '</b></td>';
-      ['hp', 'atk', 'range', 'cost'].forEach(function (f) {
-        html += '<td><input class="num" type="number" step="1" inputmode="numeric"' +
-          ' data-path="types.' + id + '.' + f + '"' +
-          ' min="' + SET_FIELDS[f][0] + '" max="' + SET_FIELDS[f][1] + '" /></td>';
-      });
-      html += '</tr>';
-    });
-    els.setUnitRows.innerHTML = html;
-  }
-
-  function syncSettingsForm() {
-    if (!app.settings) return;
-    var root = $('ovSettings');
-    Array.prototype.forEach.call(root.querySelectorAll('[data-path]'), function (el) {
-      var v = getPath(app.settings, el.getAttribute('data-path'));
-      if (document.activeElement !== el) el.value = (v == null ? '' : String(v));
-    });
-    var dens = $('setDensity');
-    Array.prototype.forEach.call(dens.querySelectorAll('button'), function (b) {
-      b.classList.toggle('on', Number(b.getAttribute('data-d')) === Number(app.settings.density));
-    });
-    var first = $('setFirst');
-    Array.prototype.forEach.call(first.querySelectorAll('button'), function (b) {
-      b.classList.toggle('on', Number(b.getAttribute('data-p')) === Number(app.settings.firstPlayer));
-    });
-
-    var isDefault = app.settings.mapMode === 'default';
-    Array.prototype.forEach.call($('setMapMode').querySelectorAll('button'), function (b) {
-      b.classList.toggle('on', (b.getAttribute('data-m') === 'default') === isDefault);
-    });
-    $('mapBasic').classList.toggle('hidden', isDefault);
-    $('mapPicker').classList.toggle('hidden', !isDefault);
-    if (isDefault) renderMapPicker();
-
-    updateSettingHints();
-  }
-
-  // 小地图预览：直接用同一套 Hex 数学画一遍
-  function drawMapPreview(canvas, side, density, seed) {
-    if (!canvas) return;
-    var dpr = Math.min(window.devicePixelRatio || 1, 2);
-    var w = 240, h = 200;
-    canvas.width = w * dpr;
-    canvas.height = h * dpr;
-    canvas.style.width = w + 'px';
-    canvas.style.height = h + 'px';
-    var ctx = canvas.getContext('2d');
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    ctx.clearRect(0, 0, w, h);
-
-    var g;
-    try { g = new ENGINE.Game({ side: side, density: density, seed: seed }); }
-    catch (e) { return; }
-
-    var s = Math.min((w - 16) / (3 * side - 1), (h - 16) / (Math.sqrt(3) * (2 * side - 1)));
-    var cx = w / 2, cy = h / 2;
-
-    g.board.order.forEach(function (c) {
-      var p = Hex.toPixel(c.q, c.r, s);
-      var x = cx + p.x, y = cy + p.y;
-      ctx.beginPath();
-      for (var i = 0; i < 6; i++) {
-        var a = Math.PI / 3 * i;
-        var px = x + s * 0.9 * Math.cos(a);
-        var py = y + s * 0.9 * Math.sin(a);
-        if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
-      }
-      ctx.closePath();
-      ctx.fillStyle = c.obstacle ? 'rgba(104,126,158,0.75)' : 'rgba(45,212,191,0.12)';
-      ctx.fill();
-      ctx.lineWidth = 0.7;
-      ctx.strokeStyle = c.obstacle ? 'rgba(12,18,28,0.7)' : 'rgba(45,212,191,0.3)';
-      ctx.stroke();
-    });
-
-    // 标出两个基地
-    [{ c: g.board.baseA, col: g.players[0].color }, { c: g.board.baseB, col: g.players[1].color }]
-      .forEach(function (b) {
-        var p = Hex.toPixel(b.c.q, b.c.r, s);
-        ctx.beginPath();
-        ctx.arc(cx + p.x, cy + p.y, s * 0.42, 0, Math.PI * 2);
-        ctx.fillStyle = b.col;
-        ctx.fill();
-      });
-  }
-
-  function renderMapPicker() {
-    var btns = $('mapBtns');
-    if (!btns) return;
-    var html = '';
-    DEFAULT_MAPS.forEach(function (m, i) {
-      html += '<button type="button" class="map-btn' +
-        (app.settings.defaultMap === i ? ' on' : '') +
-        '" data-i="' + i + '" title="' + m.name + '">' + (i + 1) + '</button>';
-    });
-    btns.innerHTML = html;
-
-    var idx = clampInt(app.settings.defaultMap, 0, DEFAULT_MAPS.length - 1, 0);
-    var cur = DEFAULT_MAPS[idx];
-    $('mapNote').textContent = '地图 ' + (idx + 1) + '「' + cur.name + '」— ' + cur.desc;
-    drawMapPreview($('mapPreview'), (window.MAPS && window.MAPS.SIDE) || 5, cur.density, cur.seed);
-  }
-  function updateSettingHints() {
-    var s = app.settings;
-    if (!s) return;
-    var side = clampInt(s.side, 3, 8, 5);
-    var e = clampInt(s.energy, 1, 9, 3);
-    var bonus = clampInt(s.lastBonus, 0, 8, 1);
-    var baseHp = clampInt(s.baseHp, 1, 20, 4);
-    setSideHint.textContent = '共 ' + Hex.cellCount(side) + ' 格';
-    setEnergyHint.textContent = '第 1 回合：先手 ' + e + ' 点 / 后手 ' + (e + bonus) +
-      ' 点；之后每回合 ' + e + ' 点。';
-    setBaseHint.textContent = '攻击合计满 ' + baseHp + ' 点被摧毁';
-  }
-
-  function updateMenuSummary() {
-    var s = app.settings;
-    if (!s) return;
-    var isDefault = s.mapMode === 'default';
-    var idx = clampInt(s.defaultMap, 0, DEFAULT_MAPS.length - 1, 0);
-    var dm = DEFAULT_MAPS[idx];
-    var side = isDefault ? ((window.MAPS && window.MAPS.SIDE) || 5) : clampInt(s.side, 3, 8, 5);
-    var density = isDefault ? dm.density : Number(s.density);
-    var dens = { 0: '无', 0.08: '低', 0.1: '低', 0.14: '中', 0.18: '高', 0.22: '高' };
-    var dl = dens[density];
-    if (!dl) dl = Math.round((density || 0) * 100) + '%';
-    var names = ['青方', '赤方'];
-    var fp = Number(s.firstPlayer) === 1 ? 1 : 0;
-
-    var mapChip = isDefault
-      ? '<span class="hi">地图 ' + (idx + 1) + '「' + dm.name + '」</span>'
-      : '<span>随机地图</span>';
-
-    var el = $('menuSummary');
-    if (!el) return;
-    el.innerHTML =
-      mapChip +
-      '<span>边长 ' + side + ' · ' + Hex.cellCount(side) + ' 格</span>' +
-      '<span>障碍 ' + dl + '</span>' +
-      '<span>每回合 ' + clampInt(s.energy, 1, 9, 3) + ' 费</span>' +
-      '<span>' + names[fp] + '先手</span>' +
-      '<span>后手 +' + clampInt(s.lastBonus, 0, 8, 1) + ' 费</span>' +
-      '<span>基地 ' + clampInt(s.baseHp, 1, 20, 4) + ' 血</span>';
-  }
-  function openSettings() {
-    syncSettingsForm();
-    showOverlay('ovSettings');
-  }
-
-  /* ---------------- 事件绑定 ---------------- */
-
-  function bindMenuAndSettings() {
-    btnOpenSettings.addEventListener('click', openSettings);
-    btnSetDone.addEventListener('click', function () {
-      sanitizeSettings();
-      saveSettings();
-      updateMenuSummary();
-      hideOverlay('ovSettings');
-    });
-    btnSetReset.addEventListener('click', function () {
-      app.settings = defaultSettings();
-      sanitizeSettings();
-      saveSettings();
-      syncSettingsForm();
-      updateMenuSummary();
-      toast('已恢复默认设置');
-    });
-    $('setDensity').addEventListener('click', function (e) {
-      var b = e.target.closest ? e.target.closest('button') : null;
-      if (!b) return;
-      app.settings.density = Number(b.getAttribute('data-d'));
-      saveSettings();
-      syncSettingsForm();
-      updateMenuSummary();
-    });
-    $('setMapMode').addEventListener('click', function (e) {
-      var b = e.target.closest ? e.target.closest('button') : null;
-      if (!b) return;
-      app.settings.mapMode = (b.getAttribute('data-m') === 'default') ? 'default' : 'random';
-      saveSettings();
-      syncSettingsForm();
-      updateMenuSummary();
-    });
-    $('mapBtns').addEventListener('click', function (e) {
-      var b = e.target.closest ? e.target.closest('.map-btn') : null;
-      if (!b) return;
-      app.settings.defaultMap = Number(b.getAttribute('data-i'));
-      saveSettings();
-      syncSettingsForm();
-      updateMenuSummary();
-    });
-    $('setFirst').addEventListener('click', function (e) {
-      var b = e.target.closest ? e.target.closest('button') : null;
-      if (!b) return;
-      app.settings.firstPlayer = Number(b.getAttribute('data-p'));
-      saveSettings();
-      syncSettingsForm();
-      updateMenuSummary();
-    });
-    $('ovSettings').addEventListener('input', function (e) {
-      var el = e.target;
-      var path = el.getAttribute ? el.getAttribute('data-path') : null;
-      if (!path) return;
-      var v = Number(el.value);
-      if (el.value === '' || !isFinite(v)) return;
-      setPath(app.settings, path, v);
-      saveSettings();
-      updateSettingHints();
-      updateMenuSummary();
-    });
-    $('ovSettings').addEventListener('change', function (e) {
-      var el = e.target;
-      var path = el.getAttribute ? el.getAttribute('data-path') : null;
-      if (!path) return;
-      sanitizeSettings();
-      saveSettings();
-      syncSettingsForm();
-      updateMenuSummary();
-    });
-    $('ovSettings').addEventListener('click', function (e) {
-      if (e.target === this) hideOverlay('ovSettings');
-    });
-  }
+  function renderUnitRows() {}
+  function syncSettingsForm() {}
+  function updateMenuSummary() {}
+  function refreshStats() {}
+  function updateSettingHints() {}
+  function openSettings() {}
   /* ---------------- 事件绑定 ---------------- */
 
   function bindEvents() {
-    bindMenuAndSettings();
-    $('btnModeLocal').addEventListener('click', function () { startGame('local'); });
-    $('menuJoinBtn').addEventListener('click', menuJoin);
-    $('menuCode').addEventListener('keydown', function (e) {
-      if (e.key === 'Enter') menuJoin();
-    });
-    $('btnModeAI').addEventListener('click', function () { startGame('ai'); });
-    $('btnModeOnline').addEventListener('click', openOnline);
 
     $('btnCreateRoom').addEventListener('click', function () {
       sanitizeSettings();
@@ -1586,15 +1182,17 @@
       Net.leave();
       app.game = null;
       hideOverlay('ovOnline');
-      updateMenuSummary();
-      showOverlay('ovMenu');
+      location.href = 'index.html';
     });
 
     $('btnMenu').addEventListener('click', goMenu);
+    $('btnCloseRules').addEventListener('click', function () { hideOverlay('ovRules'); });
+    $('btnSettings').addEventListener('click', function () {
+      hideOverlay('ovOver');
+      location.href = 'index.html';
+    });
     $('btnNew').addEventListener('click', restartGame);
-    $('btnResume').addEventListener('click', function () { hideOverlay('ovMenu'); });
     $('btnRules').addEventListener('click', function () { showOverlay('ovRules'); });
-    $('btnRules2').addEventListener('click', function () { showOverlay('ovRules'); });
     $('btnCloseRules').addEventListener('click', function () { hideOverlay('ovRules'); });
     $('ovRules').addEventListener('click', function (e) {
       if (e.target === this) hideOverlay('ovRules');
@@ -1603,10 +1201,11 @@
       hideOverlay('ovOver');
       if (app.mode === 'online') {
         Net.leave();
-        app.game = null;
-        app.mode = 'local';
-        updateMenuSummary();
-        showOverlay('ovMenu');
+        location.href = 'index.html';
+        return;
+      }
+      if (app.mode === 'tutorial') {
+        location.href = 'index.html';
         return;
       }
       startGame(app.mode);
@@ -1620,7 +1219,6 @@
     els.btnResolve.addEventListener('click', doResolve);
     els.btnEnd.addEventListener('click', endTurn);
     $('btnResign').addEventListener('click', resign);
-    $('btnModeTutorial').addEventListener('click', startTutorial);
     $('btnTutNext').addEventListener('click', function () {
       var i = (typeof app.tutDoneIndex === 'number') ? app.tutDoneIndex : 0;
       if (i >= TUT_LEVELS.length - 1) { exitTutorial(); return; }
@@ -1711,6 +1309,8 @@
     select: function (type) { app.selected = type; if (app.game) renderShop(); checkTutorial(); },
     click: function (q, r) { handleCellClick({ q: q, r: r, key: Hex.key(q, r) }); },
     toast: function (msg) { toast(msg); },
+    save: saveResume,
+    restore: restoreResume,
     tutorial: {
       start: startTutorial,
       load: loadTutorialLevel,
