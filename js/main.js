@@ -990,6 +990,67 @@
       renderResolveResult(res);
     }
   }
+  /* ---------------- 主菜单 / 新对局 ---------------- */
+
+  // 回到主菜单（联机会先退出房间；本地/单人保留棋局，可「继续当前对局」）
+  function goMenu() {
+    var g = app.game;
+    if (g && !g.over) {
+      var who = g.players[g.active] ? g.players[g.active].name : '';
+      if (!window.confirm('第 ' + g.turn + ' 回合还在进行中（轮到 ' + who + '），确定回主菜单？' +
+          (app.mode === 'online' ? '\n联机对局会被退出。' : ''))) return;
+    }
+
+    clearAITimer();
+
+    if (app.mode === 'online') {
+      Net.leave();
+      app.online = { code: null, seat: -1, seats: [false, false], started: false };
+      app.game = null;
+      app.mode = 'local';
+    }
+    if (app.mode === 'tutorial') {
+      app.tutorial = null;
+      app.tutTypes = null;
+      $('tutPanel').classList.add('hidden');
+      if ($('quickRef')) $('quickRef').classList.remove('hidden');
+      app.game = null;
+      app.mode = 'local';
+    }
+
+    hideOverlay('ovOver');
+    hideOverlay('ovRules');
+    hideOverlay('ovSettings');
+    hideOverlay('ovOnline');
+    hideOverlay('ovTutDone');
+    hideDrawBar();
+
+    var resumable = !!(app.game && !app.game.over);
+    $('btnResume').style.display = resumable ? '' : 'none';
+    updateMenuSummary();
+    refreshStats();
+    refresh();
+    showOverlay('ovMenu');
+  }
+
+  // 按当前设置重开一局（联机不能单方面重开）
+  function restartGame() {
+    var mode = app.mode;
+    if (mode === 'online') {
+      toast('联机对局不能单方面重开，回主菜单再建一间房');
+      return;
+    }
+    if (mode === 'tutorial') {
+      loadTutorialLevel(app.tutorial ? app.tutorial.index : 0);
+      toast('本关重新开始');
+      return;
+    }
+    var g = app.game;
+    if (g && !g.over) {
+      if (!window.confirm('放弃当前对局，按同样的设置重开一局？')) return;
+    }
+    startGame(mode || 'local');
+  }
   /* ---------------- 新手教学 ---------------- */
 
   var TUT = (typeof window !== 'undefined' && window.TUTORIAL) || null;
@@ -1529,14 +1590,8 @@
       showOverlay('ovMenu');
     });
 
-    $('btnNew').addEventListener('click', function () {
-      if (app.mode === 'online') { Net.leave(); app.game = null; app.mode = 'local'; }
-      clearAITimer();
-      $('btnResume').style.display = (app.game && !app.game.over) ? '' : 'none';
-      updateMenuSummary();
-      refreshStats();
-      showOverlay('ovMenu');
-    });
+    $('btnMenu').addEventListener('click', goMenu);
+    $('btnNew').addEventListener('click', restartGame);
     $('btnResume').addEventListener('click', function () { hideOverlay('ovMenu'); });
     $('btnRules').addEventListener('click', function () { showOverlay('ovRules'); });
     $('btnRules2').addEventListener('click', function () { showOverlay('ovRules'); });
