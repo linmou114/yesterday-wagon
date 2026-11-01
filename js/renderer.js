@@ -1,4 +1,4 @@
-/* =========================================================
+﻿/* =========================================================
  * renderer.js —— Canvas 绘制层（只画，不改规则状态）
  * ========================================================= */
 window.Renderer = (function () {
@@ -163,18 +163,20 @@ window.Renderer = (function () {
       }
     });
 
-    // 2. 合法落点
-    if (selected && !g.over && ui.canAfford) {
+    // 2. 合法落点（买不起时标红，而不是干脆不显示）
+    if (selected && !g.over) {
+      var canPay = !!ui.canAfford;
+      var markColor = canPay ? activeColor : '#f87171';
       legal.forEach(function (k) {
         var c = Hex.parse(k);
         var p = self.cellCenter(c.q, c.r);
         self.hexPath(p.x, p.y, s * 0.88);
-        ctx.fillStyle = rgba(activeColor, 0.07 + 0.07 * pulse);
+        ctx.fillStyle = rgba(markColor, canPay ? (0.07 + 0.07 * pulse) : 0.10);
         ctx.fill();
         ctx.save();
         ctx.setLineDash([5, 4]);
         ctx.lineWidth = 1.5;
-        ctx.strokeStyle = rgba(activeColor, 0.45 + 0.35 * pulse);
+        ctx.strokeStyle = rgba(markColor, canPay ? (0.45 + 0.35 * pulse) : 0.55);
         ctx.stroke();
         ctx.restore();
       });

@@ -367,7 +367,27 @@ button { font-family: inherit; }
   box-shadow: 0 0 0 1px rgba(45, 212, 191, 0.35), 0 10px 30px -18px var(--p0);
 }
 .card.poor { opacity: .45; }
-.card.poor.sel { opacity: .8; }
+
+/* 选中的兵种当前买不起：边框变红，提示「费用不够」 */
+.card.poor.sel {
+  opacity: .92;
+  border-color: rgba(248, 113, 113, 0.9);
+  background: linear-gradient(180deg, rgba(248, 113, 113, 0.16), rgba(248, 113, 113, 0.04));
+  box-shadow: 0 0 0 1px rgba(248, 113, 113, 0.45), 0 12px 30px -20px rgba(248, 113, 113, 0.95);
+}
+.card.poor.sel .card-name { color: #fecdd3; }
+.card.poor.sel .card-cost { color: #fca5a5; }
+.card.poor.sel .card-line { color: #e8a4ac; }
+.card.poor.sel::after {
+  content: "费用不足";
+  position: absolute;
+  right: 9px;
+  bottom: 7px;
+  font-size: 10px;
+  color: #fca5a5;
+  letter-spacing: .06em;
+  opacity: .9;
+}
 
 .card-key {
   position: absolute;
@@ -992,4 +1012,5 @@ input.num:focus {
   .modal-title { font-size: 22px; }
   .rules .kv { grid-template-columns: 1fr; }
   .inspect-card { display: none; }
+  .card.poor.sel::after { display: none; }
 }
