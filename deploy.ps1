@@ -225,8 +225,31 @@ function Commit-All {
     }
 }
 
+# 国内常见情况：github.com:443 直连被墙，但本机挂着 Clash 之类代理。
+# git 默认不读 Windows 系统代理，这里帮它配上，否则 push 会卡两分钟才失败。
+function Ensure-ProxyForGitHub {
+    if ($DryRun) { return }
+    $reachable = $false
+    try {
+        $t = Test-NetConnection github.com -Port 443 -WarningAction SilentlyContinue
+        $reachable = [bool]$t.TcpTestSucceeded
+    } catch { $reachable = $false }
+
+    if ($reachable) { Write-Ok 'github.com 直连正常'; return }
+
+    $reg = Get-ItemProperty 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Internet Settings' -ErrorAction SilentlyContinue
+    if ($reg -and $reg.ProxyEnable -eq 1 -and $reg.ProxyServer) {
+        $proxy = [string]$reg.ProxyServer
+        if ($proxy -notmatch '^https?://') { $proxy = 'http://' + $proxy }
+        Invoke-Cmd $script:Git @('config', '--global', 'http.https://github.com/.proxy', $proxy) | Out-Null
+        Write-Ok "github.com 直连不通，已让 git 走本机代理 $proxy"
+    } else {
+        Write-Warn2 'github.com 直连不通，也没发现系统代理：可能需要先开代理/VPN 再推送'
+    }
+}
 function Ensure-Remote {
     Write-Step '推送到 GitHub'
+    Ensure-ProxyForGitHub
     $remote = $null
     if (-not $DryRun) { $remote = (& $script:Git remote 2>$null | Out-String).Trim() }
     if ($remote -and ($remote -split "`n") -contains 'origin') {
