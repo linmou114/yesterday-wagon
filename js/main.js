@@ -1088,6 +1088,19 @@
     if (t.progress >= lv.steps.length && !t.finished) {
       t.finished = true;
       setTimeout(function () { showTutDone(t.index); }, 450);
+      return;
+    }
+
+    // 关卡自己判断「这步做错了」，自动重来一次
+    if (typeof lv.retry === 'function' && lv.retry(app.game, app)) {
+      var idx = t.index;
+      toast(lv.retryMsg || '再试一次');
+      setTimeout(function () {
+        if (app.mode === 'tutorial' && app.tutorial && app.tutorial.index === idx &&
+            app.tutorial.progress < TUT_LEVELS[idx].steps.length) {
+          loadTutorialLevel(idx);
+        }
+      }, 1400);
     }
   }
 
@@ -1096,7 +1109,7 @@
     var last = index >= TUT_LEVELS.length - 1;
     $('tutDoneTitle').textContent = last ? '教学完成！' : '第 ' + (index + 1) + ' 关通过';
     $('tutDoneText').textContent = last
-      ? '6 个关卡全部学完。去开一局吧——联机、单人、本地双人都能玩。'
+      ? TUT_LEVELS.length + ' 个关卡全部学完。去开一局吧——联机、单人、本地双人都能玩。'
       : '「' + lv.title + '」学会了。下一关：' + TUT_LEVELS[index + 1].title;
     $('btnTutNext').textContent = last ? '回到菜单' : '下一关';
     app.tutDoneIndex = index;

@@ -301,45 +301,66 @@ console.log('== 7.5 8 张默认地图 ==');
 console.log('== 7.8 新手教学关卡 ==');
 {
   const TUT = global.TUTORIAL;
-  ok(TUT && Array.isArray(TUT.LEVELS) && TUT.LEVELS.length === 6, '教学共 6 关');
+  const byKey = {};
+  TUT.LEVELS.forEach((lv, i) => { byKey[lv.key] = i; });
+  eq(TUT.LEVELS.length, 7, '教学共 7 关');
+
   TUT.LEVELS.forEach((lv, i) => {
     const g = TUT.buildLevel(ENGINE, i);
-    const want = (lv.spawn || []).length;
-    eq(g.pieces.size - 2, want, `第 ${i + 1} 关预置棋子全部落地`);
-    ok(g.energy === lv.energy, `第 ${i + 1} 关初始费用 ${lv.energy}`);
-    ok(lv.steps.length >= 1, `第 ${i + 1} 关有步骤`);
+    eq(g.pieces.size - 2, (lv.spawn || []).length, `第 ${i + 1} 关（${lv.key}）预置棋子全部落地`);
+    eq(g.energy, lv.energy, `第 ${i + 1} 关初始费用 ${lv.energy}`);
+    ok(lv.steps.length >= 1 && lv.steps.every((s) => typeof s.done === 'function'),
+      `第 ${i + 1} 关每步都有完成判定`);
   });
-  // 第 3 关：结算击杀
+
+  // 坦克关：放坦克挨 3 点不死，放步兵会被打死
   {
-    const g = TUT.buildLevel(ENGINE, 2);
+    const g = TUT.buildLevel(ENGINE, byKey.tank);
+    ok(g.canPlace(1, 'tank', '0,0').ok, '坦克关：三个敌人正下方可以放子');
+    g.place(1, 'tank', '0,0');
+    eq(g.damageMap().get(TUT.findPiece(g, 1, 'tank').id), 3, '坦克关：坦克会挨 3 点');
     g.resolve();
-    eq(TUT.units(g, 0), 0, '第 3 关结算后敌兵被击杀');
-    eq(TUT.units(g, 1), 3, '第 3 关我方 3 个步兵存活');
+    const tank = TUT.findPiece(g, 1, 'tank');
+    ok(!!tank, '坦克关：坦克活下来了');
+    eq(tank.hp, 4, '坦克关：伤害不累积，没到 4 点就满血');
+    eq(TUT.units(g, 1), 2, '坦克关：我方 2 个棋子都在');
+
+    const g2 = TUT.buildLevel(ENGINE, byKey.tank);
+    g2.place(1, 'infantry', '0,0');
+    g2.resolve();
+    eq(TUT.units(g2, 1), 1, '坦克关：同样位置放步兵会被 3 点打死');
   }
-  // 第 4 关：炮兵射程 2
+
+  // 炮兵关：两个棋子都距敌 2 格，只有炮兵打到
   {
-    const g = TUT.buildLevel(ENGINE, 3);
+    const g = TUT.buildLevel(ENGINE, byKey.range);
+    const foe = [...g.pieces.values()].find((p) => p.owner === 0 && p.kind === 'infantry');
+    const art = TUT.findPiece(g, 1, 'artillery');
+    const inf = TUT.findPiece(g, 1, 'infantry');
+    eq(Hex.distance(Hex.parse(art.key), Hex.parse(foe.key)), 2, '炮兵关：炮兵在 2 格外');
+    eq(Hex.distance(Hex.parse(inf.key), Hex.parse(foe.key)), 2, '炮兵关：步兵也在 2 格外');
     g.resolve();
-    eq(TUT.units(g, 0), 0, '第 4 关炮兵打到 2 格外的敌人');
+    eq(TUT.units(g, 0), 0, '炮兵关：只有炮兵打到并击杀');
+    eq(TUT.units(g, 1), 2, '炮兵关：我方毫发无伤');
   }
-  // 第 5 关：断联移除
+
+  // 断联关 / 拆基地关
   {
-    const g = TUT.buildLevel(ENGINE, 4);
+    const g = TUT.buildLevel(ENGINE, byKey.cut);
     g.resolve();
-    eq(TUT.units(g, 0), 1, '第 5 关断联移除后只剩 1 个敌兵');
+    eq(TUT.units(g, 0), 1, '断联关：断联后只剩 1 个敌兵');
   }
-  // 第 6 关：放炮拆基地
   {
-    const g = TUT.buildLevel(ENGINE, 5);
+    const g = TUT.buildLevel(ENGINE, byKey.base);
     const base = g.board.baseA;
     const spot = [...g.legalCells(1)].find((k) => {
       const c = Hex.parse(k);
       return Hex.distance(c, base) <= 2 && g.canPlace(1, 'artillery', k).ok;
     });
-    ok(!!spot, '第 6 关存在射程内的落炮点');
+    ok(!!spot, '拆基地关：存在射程内的落炮点');
     g.place(1, 'artillery', spot);
     g.resolve();
-    ok(g.over && g.winner === 1, '第 6 关结算后赤方拆掉基地获胜');
+    ok(g.over && g.winner === 1, '拆基地关：结算后赤方获胜');
   }
 }
 console.log('== 8. 结算不限次数 ==');

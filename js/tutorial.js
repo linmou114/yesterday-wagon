@@ -3,11 +3,11 @@
  *
  *   每个关卡都是一个人为摆好的小局面，只教一个知识点：
  *     1. 放置棋子      2. 费用
- *     3. 结算与伤害    4. 炮兵射程
- *     5. 断联移除      6. 打大本营
+ *     3. 坦克（血量）   4. 结算与伤害
+ *     5. 炮兵射程      6. 断联移除
+ *     7. 打大本营
  *
- *   关卡数据（纯逻辑，可在 Node 里跑测试），
- *   DOM 交互在 main.js 里。
+ *   关卡数据是纯逻辑（可在 Node 里跑测试），DOM 交互在 main.js。
  * ========================================================= */
 (function (root, factory) {
   var mod = factory();
@@ -26,6 +26,26 @@
   }
 
   function opponentUnits(g, me) { return units(g, 1 - me); }
+
+  function findPiece(g, owner, kind) {
+    var found = null;
+    g.pieces.forEach(function (p) {
+      if (p.owner === owner && p.kind === kind) found = p;
+    });
+    return found;
+  }
+
+  // 我方坦克当前会挨多少点攻击（放对了位置才是 3 点）
+  function tankTookDamage(g) {
+    var tank = findPiece(g, 1, 'tank');
+    if (!tank) return 0;
+    var dm = g.damageMap();
+    return dm.get(tank.id) || 0;
+  }
+
+  function hasResolved(g) {
+    return g.history.some(function (h) { return h.type === 'resolve'; });
+  }
 
   var LEVELS = [
     {
@@ -52,6 +72,30 @@
         { text: '3 点费用只够放 3 个步兵。选中步兵，把 3 个都放上。', done: function (g) { return units(g, 1) >= 3; } },
         { text: '费用花光了：卡片变红、棋盘不再闪光，这就是「费用不足」。点「结束回合」领下一回合的 3 点。', done: function (g) { return g.turn > 1; } }
       ]
+    },
+
+    {
+      key: 'tank',
+      title: '坦克：多花 1 费，换 1 点血',
+      side: 3,
+      energy: 2,
+      types: ['infantry', 'tank'],
+      spawn: [
+        { owner: 0, type: 'infantry', cell: '0,-1' },
+        { owner: 0, type: 'infantry', cell: '-1,0' },
+        { owner: 0, type: 'infantry', cell: '1,-1' },
+        { owner: 1, type: 'infantry', cell: '0,1' }
+      ],
+      steps: [
+        {
+          text: '棋盘中间那个空位会同时挨 3 个敌人的攻击，合计 3 点。注意：伤害不累积 —— 挨不到血量就完全没事。步兵只有 3 血，3 点正好打死它；坦克有 4 血（贵 1 费），同样挨 3 点却毫发无伤。选中「坦克」，放到三个敌人正下方那一格，再点「结算」。',
+          done: function (g) { return tankTookDamage(g) >= 3; }
+        }
+      ],
+      retry: function (g) {
+        return hasResolved(g) && tankTookDamage(g) < 3;
+      },
+      retryMsg: '结算后没看到坦克硬扛 3 点的效果。重来一次：把坦克放到三个敌人正下方那一格。'
     },
 
     {
@@ -82,12 +126,12 @@
       types: [],
       spawn: [
         { owner: 0, type: 'infantry', cell: '0,-1', hp: 1 },
-        { owner: 1, type: 'infantry', cell: '0,1' },
-        { owner: 1, type: 'artillery', cell: '0,0' }
+        { owner: 1, type: 'artillery', cell: '0,1' },
+        { owner: 1, type: 'infantry', cell: '1,0' }
       ],
       steps: [
         {
-          text: '敌方步兵离你有 2 格远，你的步兵射程只有 1，够不到它。但你有一门「炮兵」射程 2 —— 点「结算」，这一炮正好打到。',
+          text: '敌人离你这两个棋子都是 2 格。步兵射程只有 1，够不到；炮兵的射程是 2，正好打得到。点「结算」—— 只有炮兵会开火。',
           done: function (g) { return opponentUnits(g, 1) === 0; }
         }
       ]
@@ -154,7 +198,6 @@
     var g = new ENGINE.Game({
       side: level.side, density: 0, seed: 1000 + index, rules: rules
     });
-    // 玩家先手，费用只给玩家
     g.active = 1;
     g.turn = 1;
     g.energy = level.energy;
@@ -168,6 +211,7 @@
   return {
     LEVELS: LEVELS,
     buildLevel: buildLevel,
-    units: units
+    units: units,
+    findPiece: findPiece
   };
 });
