@@ -231,6 +231,40 @@ function send(ws, msg) { ws.send(JSON.stringify(msg)); }
     a3.close();
     b3.close();
 
+    console.log('== 房间生命周期 ==');
+    const a4 = await connect();
+    send(a4, { t: 'create', settings: { side: 4, density: 0, rules: { firstPlayer: 1, energyPerTurn: 3, baseHp: 4 }, types: {} } });
+    const room4 = await waitFor(a4, (m) => m.t === 'room', '生命周期房间');
+    await waitFor(a4, (m) => m.t === 'state', '生命周期初始状态');
+    const b4 = await connect();
+    send(b4, { t: 'join', code: room4.code });
+    await waitFor(b4, (m) => m.t === 'room', 'B 加入生命周期房间');
+    await waitFor(a4, (m) => m.t === 'state' && m.seats[1] === true, '两人齐');
+
+    // 只走一个人：房间要保留，且本人能凭 token 回到原座位
+    a4.inbox.forEach((m) => { m.__used = true; });
+    send(a4, { t: 'leave' });
+    await new Promise((r) => setTimeout(r, 200));
+    a4.inbox.forEach((m) => { m.__used = true; });
+    send(a4, { t: 'rejoin', code: room4.code, token: room4.token });
+    const back = await waitFor(a4, (m) => m.t === 'room' || m.t === 'err', '离开后重连');
+    ok(back.t === 'room', '一个人离开后房间仍然存在，可以重连回原座位');
+    ok(back.seat === room4.seat, '重连回到原来的座位');
+
+    // 认输让对局结束，然后双方都离开 → 房间立刻回收
+    send(b4, { t: 'act', action: { kind: 'resign' } });
+    await waitFor(b4, (m) => m.t === 'state' && m.state.over === true, '对局结束');
+    send(b4, { t: 'leave' });
+    await new Promise((r) => setTimeout(r, 200));
+    const d4 = await connect();
+    d4.inbox.forEach((m) => { m.__used = true; });
+    send(d4, { t: 'join', code: room4.code });
+    const dead = await waitFor(d4, (m) => m.t === 'room' || m.t === 'err', '对局结束后房间已关闭');
+    ok(dead.t === 'err', '对局结束后双方都离开，房间立即关闭');
+    d4.close();
+    a4.close();
+    b4.close();
+
     a.close();
     b2.close();
   } catch (err) {

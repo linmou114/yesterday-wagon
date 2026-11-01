@@ -91,6 +91,8 @@ const server = http.createServer((req, res) => {
 
 const rooms = new Map();          // code -> room
 const ROOM_TTL = 3 * 60 * 60 * 1000;   // 3 小时没动静就清理
+const EMPTY_TTL = 10 * 60 * 1000;      // 对局没打完、所有人都离线：保留 10 分钟等重连
+const OVER_TTL = 60 * 1000;            // 对局已结束、所有人都离线：1 分钟后删
 const SEAT_TIMEOUT = 10 * 60 * 1000;   // 掉线后座位保留 10 分钟
 
 function newCode() {
@@ -398,6 +400,14 @@ function doLeave(ws) {
     broadcast(room, { t: 'peer', seat: ws.meta.seat, online: false });
   }
   ws.meta = { code: null, seat: -1 };
+
+  // 对局已经结束、又没人留在房间里 → 立刻回收房间号
+  const anyoneOnline = room.seats.some((s) => s.online);
+  if (!anyoneOnline && room.game.over) {
+    rooms.delete(room.code);
+    return;
+  }
+  room.updatedAt = Date.now();
 }
 
 /* ---------------- 保活 / 清理 ---------------- */
@@ -411,14 +421,16 @@ const heartbeat = setInterval(() => {
   });
 }, 25000);
 
-// 清理空房间
+// 清理空房间：没人了就开始倒计时
 const sweeper = setInterval(() => {
   const now = Date.now();
   rooms.forEach((room, code) => {
-    const alive = room.seats.some((s) => s.online);
-    if (!alive && now - room.updatedAt > ROOM_TTL) rooms.delete(code);
+    if (room.seats.some((s) => s.online)) return;       // 还有人挂着，不动
+    const idle = now - room.updatedAt;
+    const ttl = room.game.over ? OVER_TTL : EMPTY_TTL;
+    if (idle > ttl || idle > ROOM_TTL) rooms.delete(code);
   });
-}, 10 * 60 * 1000);
+}, 30 * 1000);
 
 function shutdown() {
   clearInterval(heartbeat);
