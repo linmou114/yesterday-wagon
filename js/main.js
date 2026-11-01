@@ -1,4 +1,4 @@
-/* =========================================================
+﻿/* =========================================================
  * main.js —— 界面与交互
  * ========================================================= */
 (function () {
@@ -65,6 +65,8 @@
     bindEvents();
     syncSettingsForm();
     updateMenuSummary();
+    prefillRoomCode();
+    checkServerStatus();
     showOverlay('ovMenu');
   }
 
@@ -604,6 +606,72 @@
     showGameOver();
   }
 
+  /* ---------------- 入口页：服务器状态 / 快速加入 ---------------- */
+
+  var CODE_KEY = 'yesterday-bus.lastcode';
+
+  function checkServerStatus() {
+    var tag = $('srvTag');
+    if (!tag) return;
+    if (typeof location !== 'undefined' && location.protocol === 'file:') {
+      tag.textContent = '本地模式';
+      tag.className = 'mode-tag';
+      return;
+    }
+    tag.textContent = '检测中';
+    tag.className = 'mode-tag';
+
+    var done = false;
+    var timer = setTimeout(function () {
+      if (done) return;
+      done = true;
+      tag.textContent = '连接超时';
+      tag.className = 'mode-tag bad';
+    }, 4000);
+
+    fetch(location.origin + '/health', { cache: 'no-store' })
+      .then(function (r) { return r.ok ? r.text() : null; })
+      .then(function (txt) {
+        if (done) return;
+        done = true;
+        clearTimeout(timer);
+        if (txt && txt.trim() === 'ok') {
+          tag.textContent = '在线';
+          tag.className = 'mode-tag ok';
+        } else {
+          tag.textContent = '不支持联机';
+          tag.className = 'mode-tag bad';
+        }
+      })
+      .catch(function () {
+        if (done) return;
+        done = true;
+        clearTimeout(timer);
+        tag.textContent = '离线';
+        tag.className = 'mode-tag bad';
+      });
+  }
+
+  function prefillRoomCode() {
+    var el = $('menuCode');
+    if (!el) return;
+    try {
+      var v = window.localStorage.getItem(CODE_KEY);
+      if (v && /^\d{4}$/.test(v)) el.value = v;
+    } catch (e) {}
+  }
+
+  function menuJoin() {
+    var el = $('menuCode');
+    var code = el ? String(el.value || '').trim() : '';
+    if (!/^\d{4}$/.test(code)) {
+      toast('请输入 4 位房号');
+      if (el) el.focus();
+      return;
+    }
+    openOnline();
+    Net.join(code);
+  }
   /* ---------------- 联机 ---------------- */
 
   function openOnline() {
@@ -948,6 +1016,10 @@
   function bindEvents() {
     bindMenuAndSettings();
     $('btnModeLocal').addEventListener('click', function () { startGame('local'); });
+    $('menuJoinBtn').addEventListener('click', menuJoin);
+    $('menuCode').addEventListener('keydown', function (e) {
+      if (e.key === 'Enter') menuJoin();
+    });
     $('btnModeAI').addEventListener('click', function () { startGame('ai'); });
     $('btnModeOnline').addEventListener('click', openOnline);
 

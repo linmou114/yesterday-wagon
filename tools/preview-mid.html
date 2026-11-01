@@ -1,4 +1,4 @@
-<!doctype html>
+﻿<!doctype html>
 <html lang="zh-CN">
 <head>
 <meta charset="utf-8" />
@@ -80,43 +80,68 @@
 <!-- ============ 开始菜单 ============ -->
 <div class="overlay" id="ovMenu">
   <div class="modal menu">
-    <svg class="menu-mark" viewBox="0 0 32 32" aria-hidden="true">
-      <polygon points="16,2 29,9.5 29,22.5 16,30 3,22.5 3,9.5" />
-    </svg>
-    <h1 class="menu-title">昨日圆车</h1>
-    <p class="menu-sub">六边形双人战棋 · 回合制 · 同屏对战</p>
+    <div class="menu-hex"></div>
+    <div class="menu-inner">
+      <div class="menu-brand">
+        <svg class="menu-mark" viewBox="0 0 32 32" aria-hidden="true">
+          <polygon points="16,2 29,9.5 29,22.5 16,30 3,22.5 3,9.5" />
+        </svg>
+      </div>
+      <h1 class="menu-title">昨日圆车</h1>
+      <p class="menu-sub">六边形战棋 · 双人回合制</p>
 
-    <div class="mode-list">
-      <button class="mode" id="btnModeLocal" type="button">
-        <b>本地双人</b>
-        <span>同一台设备轮流操作</span>
-      </button>
-      <button class="mode" id="btnModeAI" type="button">
-        <b>单人 · 对战 AI</b>
-        <span>你执先手，电脑接招</span>
-      </button>
-      <button class="mode" id="btnModeOnline" type="button">
-        <b>联机对战</b>
-        <span>建房、发房号、实时对下</span>
-      </button>
+      <div class="mode-list">
+        <button class="mode" id="btnModeLocal" type="button">
+          <span class="mode-ico" style="--c:#2dd4bf">
+            <svg viewBox="0 0 32 32"><polygon points="16,3 28,10 28,22 16,29 4,22 4,10" /></svg>
+            <i>双</i>
+          </span>
+          <span class="mode-text"><b>本地双人</b><em>同一台设备轮流操作</em></span>
+          <span class="mode-go">›</span>
+        </button>
+
+        <button class="mode" id="btnModeAI" type="button">
+          <span class="mode-ico" style="--c:#fbbf24">
+            <svg viewBox="0 0 32 32"><polygon points="16,3 28,10 28,22 16,29 4,22 4,10" /></svg>
+            <i>AI</i>
+          </span>
+          <span class="mode-text"><b>单人 · 对战 AI</b><em>你执先手，电脑接招</em></span>
+          <span class="mode-go">›</span>
+        </button>
+
+        <button class="mode" id="btnModeOnline" type="button">
+          <span class="mode-ico" style="--c:#a78bfa">
+            <svg viewBox="0 0 32 32"><polygon points="16,3 28,10 28,22 16,29 4,22 4,10" /></svg>
+            <i>网</i>
+          </span>
+          <span class="mode-text"><b>联机对战</b><em>建房、发房号、实时对下</em></span>
+          <span class="mode-tag" id="srvTag">检测中</span>
+        </button>
+      </div>
+
+      <div class="join-inline">
+        <input id="menuCode" class="join-input" type="text" inputmode="numeric" maxlength="4"
+               placeholder="房号" autocomplete="off" />
+        <button class="btn small" id="menuJoinBtn" type="button">加入房间</button>
+      </div>
+
+      <button class="btn ghost menu-continue" id="btnResume" type="button" style="display:none">继续当前对局</button>
+
+      <div class="menu-row">
+        <button class="btn" id="btnOpenSettings" type="button">设置</button>
+        <button class="btn ghost" id="btnRules2" type="button">规则</button>
+      </div>
+
+      <div class="menu-summary" id="menuSummary"></div>
+
+      <p class="tip">
+        选兵种 → 点棋盘上闪烁的格子放置 → 要动手时点「结算」→「结束回合」。<br />
+        快捷键：<b>1 / 2 / 3</b> 选兵种，<b>R</b> 结算，<b>空格</b> 结束回合。
+      </p>
+      <p class="menu-foot">v1.0 · 六边形网格 · 零依赖</p>
     </div>
-    <button class="btn ghost menu-continue" id="btnResume" type="button" style="display:none">继续当前对局</button>
-
-    <div class="menu-row">
-      <button class="btn" id="btnOpenSettings" type="button">设置</button>
-      <button class="btn ghost" id="btnRules2" type="button">规则</button>
-    </div>
-
-    <div class="menu-summary" id="menuSummary"></div>
-
-    <p class="tip">
-      同屏双人：两人轮流用同一台设备操作。<br />
-      选兵种 → 点棋盘上闪烁的格子放置 → 要动手时点「结算」→「结束回合」。<br />
-      快捷键：<b>1 / 2 / 3</b> 选兵种，<b>R</b> 结算，<b>空格</b> 结束回合。
-    </p>
   </div>
 </div>
-
 <!-- ============ 联机 ============ -->
 <div class="overlay hidden" id="ovOnline">
   <div class="modal">
