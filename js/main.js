@@ -1,4 +1,4 @@
-﻿/* =========================================================
+/* =========================================================
  * main.js —— 界面与交互
  * ========================================================= */
 (function () {
@@ -27,6 +27,7 @@
 
   var els = {};
   var toastTimer = null;
+  var EMPTY_SET = new Set();
 
   // 当前对局的兵种表与规则（没有对局时用默认值）
   function typesOf() { return (app.game && app.game.types) || ENGINE.TYPES; }
@@ -45,6 +46,10 @@
     els.btnResolve = $('btnResolve');
     els.btnEnd = $('btnEnd');
     els.setUnitRows = $('setUnitRows');
+    els.shop = els.shop || $('shop');
+    els.dockActions = $('dockActions');
+    els.waitBar = $('waitBar');
+    els.drawBar = $('drawBar');
     els.overTitle = $('overTitle');
     els.overSub = $('overSub');
 
@@ -52,7 +57,7 @@
     app.renderer.start(function () {
       var g = app.game;
       return {
-        legal: app.legal,
+        legal: app.legalShown || EMPTY_SET,
         selected: app.selected,
         hover: app.hover,
         inspect: app.inspect,
@@ -219,6 +224,9 @@
     app.effects.length = 0;
     app.stuckStamp = null;
     app.startedAt = Date.now();
+    app.drawByAgreement = false;
+    app.drawPending = false;
+    hideDrawBar();
 
     els.log.innerHTML = '';
     app.renderer.setGame(app.game);
@@ -247,9 +255,12 @@
     var g = app.game;
     if (!g) return;
     app.legal = g.over ? new Set() : g.legalCells(g.active);
+    app.showLegal = isMyTurn();
+    app.legalShown = app.showLegal ? app.legal : EMPTY_SET;
     renderPanels();
     renderShop();
     renderButtons();
+    renderTurnUI();
     updateInspectCard();
 
     // 被完全堵死时提醒一下，别让人干坐着
@@ -325,6 +336,23 @@
     els.shop.innerHTML = html;
   }
 
+  // 非己方回合：藏掉「放置棋子 + 结束回合」整块，只留等待提示
+  function renderTurnUI() {
+    var g = app.game;
+    if (!g) return;
+    var mine = isMyTurn();
+    var waiting = !mine && !g.over && app.mode !== 'local';
+    if (els.shop) els.shop.classList.toggle('hidden', waiting);
+    if (els.dockActions) els.dockActions.classList.toggle('hidden', waiting);
+    if (els.waitBar) {
+      els.waitBar.classList.toggle('hidden', !waiting);
+      if (waiting) {
+        els.waitBar.textContent = (app.mode === 'online')
+          ? ('等待 ' + g.players[g.active].name + ' 行动…')
+          : '电脑正在思考…';
+      }
+    }
+  }
   function renderButtons() {
     var g = app.game;
     els.btnResolve.disabled = !g || g.over;
@@ -333,6 +361,7 @@
       ? '回合结束前可以反复结算（本回合已结算 ' + (g.resolveCount || 0) + ' 次）'
       : '';
     els.btnEnd.disabled = !g || g.over;
+    if (els.btnDraw) els.btnDraw.disabled = !g || g.over || !!app.drawPending;
     els.turnChip.textContent = g ? ('第 ' + g.turn + ' 回合 · ' + g.players[g.active].name) : '—';
   }
 
@@ -811,6 +840,9 @@
     app.mode = 'online';
     app.online.started = true;
     app.startedAt = Date.now();
+    app.drawByAgreement = false;
+    app.drawPending = false;
+    hideDrawBar();
     app.mySeat = app.online.seat;
     app.game = ENGINE.Game.fromJSON(msg.state);
     app.selected = 'infantry';
@@ -874,6 +906,27 @@
       return;
     }
 
+    if (ev.kind === 'drawOffer') {
+      if (ev.from !== app.mySeat) {
+        showDrawBar(g.players[ev.from].name + ' 请求和棋');
+        toast('对手请求和棋');
+      }
+      return;
+    }
+
+    if (ev.kind === 'drawResult') {
+      app.drawPending = false;
+      hideDrawBar();
+      if (ev.accepted) {
+        app.drawByAgreement = true;
+        addLog('双方同意和棋', 'big');
+      } else {
+        addLog('和棋被拒绝', 'sys');
+        toast('对手拒绝了和棋');
+      }
+      return;
+    }
+
     if (ev.kind === 'resolve') {
       var damage = new Map();
       Object.keys(ev.damage || {}).forEach(function (k) {
@@ -895,6 +948,63 @@
       renderResolveResult(res);
     }
   }
+  /* ---------------- 求和 ---------------- */
+
+  function showDrawBar(text) {
+    var bar = els.drawBar;
+    if (!bar) return;
+    $('drawText').textContent = text;
+    bar.classList.remove('hidden');
+  }
+  function hideDrawBar() {
+    if (els.drawBar) els.drawBar.classList.add('hidden');
+  }
+
+  function offerDraw() {
+    var g = app.game;
+    if (!g || g.over) return;
+    if (!isMyTurn()) { toast('还没轮到你'); return; }
+
+    if (app.mode === 'online') {
+      app.drawPending = true;
+      Net.act({ kind: 'draw' });
+      toast('求和请求已发出，等对手回应');
+      renderTurnUI();
+      return;
+    }
+
+    if (app.mode === 'ai') {
+      var accept = window.AI ? window.AI.acceptsDraw(g, app.aiSeat) : true;
+      if (accept) {
+        clearAITimer();
+        app.drawByAgreement = true;
+        g.over = true;
+        g.winner = -1;
+        addLog('AI 接受了和棋', 'big');
+        refresh();
+        showGameOver();
+      } else {
+        addLog('AI 拒绝了和棋', 'sys');
+        toast('AI 拒绝了和棋');
+      }
+      return;
+    }
+
+    // 本地双人：同一台设备，确认一次即可
+    if (!window.confirm('双方都同意和棋？（确定即判平局）')) return;
+    app.drawByAgreement = true;
+    g.over = true;
+    g.winner = -1;
+    addLog('双方同意和棋', 'big');
+    refresh();
+    showGameOver();
+  }
+
+  function answerDraw(accept) {
+    hideDrawBar();
+    if (app.mode !== 'online') return;
+    Net.act({ kind: 'drawAnswer', accept: !!accept });
+  }
   /* ---------------- 弹窗 / 提示 ---------------- */
 
   function showOverlay(id) { var el = $(id); if (el) el.classList.remove('hidden'); }
@@ -915,9 +1025,11 @@
     var again = $('btnAgain');
     if (again) again.textContent = (app.mode === 'online') ? '返回主菜单' : '再来一局';
     if (g.winner === -1) {
-      els.overTitle.textContent = '同归于尽';
+      els.overTitle.textContent = app.drawByAgreement ? '平局（和棋）' : '同归于尽';
       els.overTitle.className = 'over-title draw';
-      els.overSub.textContent = '双方大本营在同一轮结算中同时被摧毁，本局平局。';
+      els.overSub.textContent = app.drawByAgreement
+        ? '双方同意和棋，本局平局。'
+        : '双方大本营在同一轮结算中同时被摧毁，本局平局。';
     } else {
       var name = g.players[g.winner].name;
       els.overTitle.textContent = name + ' 胜利';
@@ -1183,6 +1295,9 @@
     els.btnResolve.addEventListener('click', doResolve);
     els.btnEnd.addEventListener('click', endTurn);
     $('btnResign').addEventListener('click', resign);
+    $('btnDraw').addEventListener('click', offerDraw);
+    $('btnDrawAccept').addEventListener('click', function () { answerDraw(true); });
+    $('btnDrawDecline').addEventListener('click', function () { answerDraw(false); });
 
     els.shop.addEventListener('click', function (e) {
       var card = e.target.closest ? e.target.closest('.card') : null;

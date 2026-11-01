@@ -200,6 +200,37 @@ function send(ws, msg) { ws.send(JSON.stringify(msg)); }
     }
     ok(last.turn >= 1, '服务端能持续推进对局（' + last.turn + ' 回合 / ' + last.pieces.length + ' 棋子）');
 
+    console.log('== 求和 / 认输 ==');
+    const a3 = await connect();
+    send(a3, { t: 'create', settings: { side: 4, density: 0, rules: { firstPlayer: 1, energyPerTurn: 3, baseHp: 4 }, types: {} } });
+    const room3 = await waitFor(a3, (m) => m.t === 'room', '求和房间');
+    await waitFor(a3, (m) => m.t === 'state', '求和初始状态');
+    const b3 = await connect();
+    send(b3, { t: 'join', code: room3.code });
+    await waitFor(b3, (m) => m.t === 'room', 'B 加入求和房间');
+    await waitFor(a3, (m) => m.t === 'state' && m.seats[1] === true, '两人齐');
+
+    // 先手是 1 号座位，0 号发起求和应被拒绝
+    a3.inbox.forEach((m) => { m.__used = true; });
+    send(a3, { t: 'act', action: { kind: 'draw' } });
+    const errD = await waitFor(a3, (m) => m.t === 'err', '越权求和被拒');
+    ok(/还没轮到/.test(errD.msg), '不是自己回合不能发起求和');
+
+    // 1 号（先手）发起求和
+    b3.inbox.forEach((m) => { m.__used = true; });
+    a3.inbox.forEach((m) => { m.__used = true; });
+    send(b3, { t: 'act', action: { kind: 'draw' } });
+    const offer = await waitFor(a3, (m) => m.t === 'state' && m.event && m.event.kind === 'drawOffer', 'A 收到求和请求');
+    ok(offer.event.from === 1, '求和请求来自 1 号座位');
+
+    // 0 号同意 → 平局
+    send(a3, { t: 'act', action: { kind: 'drawAnswer', accept: true } });
+    const acc = await waitFor(a3, (m) => m.t === 'state' && m.event && m.event.kind === 'drawResult', '求和结果');
+    ok(acc.event.accepted === true, '求和被接受');
+    ok(acc.state.over === true && acc.state.winner === -1, '接受求和后判定平局');
+    a3.close();
+    b3.close();
+
     a.close();
     b2.close();
   } catch (err) {

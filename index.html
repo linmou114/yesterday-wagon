@@ -43,6 +43,11 @@
     <section class="board-shell">
       <canvas id="board"></canvas>
       <div class="board-toast" id="toast" aria-live="polite"></div>
+      <div class="draw-bar hidden" id="drawBar">
+        <span id="drawText">对手请求和棋</span>
+        <button class="btn small" id="btnDrawAccept" type="button">同意</button>
+        <button class="btn ghost small" id="btnDrawDecline" type="button">拒绝</button>
+      </div>
       <div class="inspect-card" id="inspect"></div>
     </section>
 
@@ -61,7 +66,7 @@
           <span><kbd>R</kbd> 结算</span>
           <span><kbd>空格</kbd> 结束回合</span>
         </div>
-        <button class="btn ghost btn-mini" id="btnResign" type="button">认输</button>
+
       </div>
     </div>
   </main>
@@ -69,10 +74,13 @@
   <!-- ============ 底部操作区 ============ -->
   <footer class="dock">
     <div class="shop" id="shop"></div>
-    <div class="dock-actions">
+    <div class="dock-actions" id="dockActions">
       <button class="btn primary" id="btnResolve" type="button">结算</button>
       <button class="btn" id="btnEnd" type="button">结束回合</button>
+      <button class="btn ghost" id="btnDraw" type="button">求和</button>
+      <button class="btn ghost" id="btnResign" type="button">认输</button>
     </div>
+    <div class="wait-bar hidden" id="waitBar">等待对手行动…</div>
   </footer>
 
 </div>

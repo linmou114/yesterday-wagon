@@ -246,6 +246,7 @@ function doCreate(ws, msg) {
   const room = {
     code,
     game,
+    drawOffer: null,
     createdAt: Date.now(),
     updatedAt: Date.now(),
     seats: [
@@ -320,7 +321,30 @@ function doAct(ws, msg) {
   const action = msg.action || {};
 
   if (g.over) return send(ws, { t: 'err', msg: '对局已结束' });
+
+  // 求和应答：任何时候都能答，不受回合限制
+  if (action.kind === 'drawAnswer') {
+    if (!room.drawOffer) return send(ws, { t: 'err', msg: '没有待处理的求和' });
+    if (room.drawOffer.from === seat) return send(ws, { t: 'err', msg: '不能答应自己的求和' });
+    const from = room.drawOffer.from;
+    if (action.accept) {
+      g.over = true;
+      g.winner = -1;
+    }
+    room.drawOffer = null;
+    room.updatedAt = Date.now();
+    return pushState(room, { kind: 'drawResult', accepted: !!action.accept, from: from });
+  }
+
   if (g.active !== seat) return send(ws, { t: 'err', msg: '还没轮到你' });
+
+  // 发起求和：只能在自己回合发
+  if (action.kind === 'draw') {
+    if (room.drawOffer) return send(ws, { t: 'err', msg: '已经有一个求和在进行中' });
+    room.drawOffer = { from: seat, at: Date.now() };
+    room.updatedAt = Date.now();
+    return pushState(room, { kind: 'drawOffer', from: seat });
+  }
 
   let event = null;
 

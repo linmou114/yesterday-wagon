@@ -1,4 +1,4 @@
-/* =========================================================
+﻿/* =========================================================
  * ai.js —— 内置 AI 对手（纯逻辑，浏览器和 Node 都能跑）
  *
  * 思路：一步前瞻 + 局面评估
@@ -109,6 +109,13 @@
     return after > before + 0.001;
   }
 
+  // 对手来求和：落后或势均力敌就接受，明显领先就拒绝
+  function acceptsDraw(g, seat) {
+    if (g.over) return true;
+    var me = (seat == null) ? g.active : seat;
+    return evaluate(g, me) < 20;
+  }
+
   // 整个回合打完（服务器 / 测试用）
   function playTurn(g) {
     var me = g.active;
@@ -129,6 +136,7 @@
     chooseMove: chooseMove,
     shouldResolve: shouldResolve,
     playTurn: playTurn,
-    pieceValue: pieceValue
+    pieceValue: pieceValue,
+    acceptsDraw: acceptsDraw
   };
 });
