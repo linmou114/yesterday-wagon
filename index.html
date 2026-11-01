@@ -53,7 +53,21 @@
 
     <div class="side side-right">
       <aside class="panel panel-p1" id="panel-1"></aside>
-      <div class="quick">
+      <div class="panel tut-panel hidden" id="tutPanel">
+        <div class="tut-head">
+          <span class="tut-badge">教学</span>
+          <span class="tut-level" id="tutLevel"></span>
+        </div>
+        <h3 class="tut-title" id="tutTitle"></h3>
+        <p class="tut-text" id="tutText"></p>
+        <div class="tut-steps" id="tutSteps"></div>
+        <div class="tut-actions">
+          <button class="btn ghost small" id="btnTutSkip" type="button">跳过这关</button>
+          <button class="btn ghost small" id="btnTutExit" type="button">退出教学</button>
+        </div>
+      </div>
+
+      <div class="quick" id="quickRef">
         <h4>速查</h4>
         <ul>
           <li>点下方兵种，再点棋盘上<b>虚线格</b>放置</li>
@@ -124,6 +138,16 @@
           </span>
           <span class="mode-text"><b>联机对战</b><em>建房、发房号、实时对下</em></span>
           <span class="mode-tag" id="srvTag">检测中</span>
+        </button>
+      </div>
+
+        <button class="mode" id="btnModeTutorial" type="button">
+          <span class="mode-ico" style="--c:#60a5fa">
+            <svg viewBox="0 0 32 32"><polygon points="16,3 28,10 28,22 16,29 4,22 4,10" /></svg>
+            <i>教</i>
+          </span>
+          <span class="mode-text"><b>新手教学</b><em>6 个小关卡，边打边学</em></span>
+          <span class="mode-go">›</span>
         </button>
       </div>
 
@@ -318,6 +342,19 @@
   </div>
 </div>
 
+<!-- ============ 教学过关 ============ -->
+<div class="overlay hidden" id="ovTutDone">
+  <div class="modal tut-done">
+    <div class="tut-check">✓</div>
+    <h1 class="over-title" id="tutDoneTitle">过关</h1>
+    <p class="over-sub" id="tutDoneText"></p>
+    <div class="over-actions">
+      <button class="btn primary" id="btnTutNext" type="button">下一关</button>
+      <button class="btn ghost" id="btnTutQuit" type="button">退出教学</button>
+    </div>
+  </div>
+</div>
+
 <!-- ============ 结算 ============ -->
 <div class="overlay hidden" id="ovOver">
   <div class="modal over-modal">
@@ -337,6 +374,7 @@
 <script src="js/ai.js"></script>
 <script src="js/net.js"></script>
 <script src="js/renderer.js"></script>
+<script src="js/tutorial.js"></script>
 <script src="js/main.js"></script>
 </body>
 </html>

@@ -287,6 +287,7 @@
     renderButtons();
     renderTurnUI();
     updateInspectCard();
+    checkTutorial();
 
     // 被完全堵死时提醒一下，别让人干坐着
     var stamp = g.turn + ':' + g.active;
@@ -347,7 +348,9 @@
   function renderShop() {
     var g = app.game;
     var html = '';
+    var only = (app.mode === 'tutorial' && app.tutTypes) ? app.tutTypes : null;
     ENGINE.TYPE_LIST.forEach(function (id, idx) {
+      if (only && only.indexOf(id) < 0) return;
       var t = typesOf()[id];
       var afford = g.energy >= t.cost && !g.over;
       html += '<button type="button" class="card' + (app.selected === id ? ' sel' : '') +
@@ -367,7 +370,8 @@
     if (!g) return;
     var mine = isMyTurn();
     var waiting = !mine && !g.over && app.mode !== 'local';
-    if (els.shop) els.shop.classList.toggle('hidden', waiting);
+    var noShop = (app.mode === 'tutorial' && app.tutTypes && app.tutTypes.length === 0);
+    if (els.shop) els.shop.classList.toggle('hidden', waiting || noShop);
     if (els.dockActions) els.dockActions.classList.toggle('hidden', waiting);
     if (els.waitBar) {
       els.waitBar.classList.toggle('hidden', !waiting);
@@ -415,6 +419,8 @@
   /* ---------------- 模式与回合控制 ---------------- */
 
   function isMyTurn() {
+    // 教学模式：永远由玩家操作
+    if (app.mode === 'tutorial') return !!(app.game && !app.game.over);
     var g = app.game;
     if (!g || g.over) return false;
     if (app.mode === 'online') return g.active === app.mySeat;
@@ -639,6 +645,17 @@
       return;
     }
     applyEndTurn();
+
+    if (app.mode === 'tutorial' && app.game && !app.game.over &&
+        app.game.active !== app.humanSeat) {
+      setTimeout(function () {
+        if (app.mode !== 'tutorial' || !app.game || app.game.over) return;
+        if (app.tutorial && app.tutorial.finished) return;   // 这关已经过了，别再动局面
+        app.game.endTurn();
+        refresh();
+        toast('对手放弃回合（教学模式）');
+      }, 800);
+    }
   }
 
   function resign() {
@@ -972,6 +989,118 @@
       };
       renderResolveResult(res);
     }
+  }
+  /* ---------------- 新手教学 ---------------- */
+
+  var TUT = (typeof window !== 'undefined' && window.TUTORIAL) || null;
+  var TUT_LEVELS = (TUT && TUT.LEVELS) || [];
+
+  function startTutorial() {
+    if (!TUT) { toast('教学模块没加载'); return; }
+    app.mode = 'tutorial';
+    app.humanSeat = 1;
+    app.aiSeat = -1;
+    app.tutorial = { index: 0, progress: 0, finished: false };
+    loadTutorialLevel(0);
+  }
+
+  function loadTutorialLevel(index) {
+    var lv = TUT_LEVELS[index];
+    if (!lv) { exitTutorial(); return; }
+
+    clearAITimer();
+    app.tutorial = app.tutorial || {};
+    app.tutorial.index = index;
+    app.tutorial.progress = 0;
+    app.tutorial.finished = false;
+
+    app.game = TUT.buildLevel(ENGINE, index);
+    app.selected = null;
+    app.hover = null;
+    app.inspect = null;
+    app.effects.length = 0;
+    app.stuckStamp = null;
+    app.startedAt = Date.now();
+    app.drawByAgreement = false;
+    app.drawPending = false;
+    app.tutTypes = (lv.types || []).slice();
+
+    hideOverlay('ovMenu');
+    hideOverlay('ovSettings');
+    hideOverlay('ovOver');
+    hideOverlay('ovRules');
+    hideOverlay('ovOnline');
+    hideOverlay('ovTutDone');
+    $('tutPanel').classList.remove('hidden');
+    if ($('quickRef')) $('quickRef').classList.add('hidden');
+    els.log.innerHTML = '';
+    app.renderer.setGame(app.game);
+    refresh();
+    renderTutorial();
+    addLog('【第 ' + (index + 1) + ' / ' + TUT_LEVELS.length + ' 关】' + lv.title, 'big');
+  }
+
+  function exitTutorial() {
+    app.tutorial = null;
+    app.tutTypes = null;
+    $('tutPanel').classList.add('hidden');
+    if ($('quickRef')) $('quickRef').classList.remove('hidden');
+    hideOverlay('ovTutDone');
+    app.game = null;
+    refresh();
+    updateMenuSummary();
+    showOverlay('ovMenu');
+  }
+
+  function renderTutorial() {
+    var t = app.tutorial;
+    if (!t) return;
+    var lv = TUT_LEVELS[t.index];
+    if (!lv) return;
+
+    $('tutLevel').textContent = '第 ' + (t.index + 1) + ' / ' + TUT_LEVELS.length + ' 关';
+    $('tutTitle').textContent = lv.title;
+
+    var step = lv.steps[t.progress];
+    $('tutText').textContent = step ? step.text : '这一关完成了。';
+
+    var html = '';
+    lv.steps.forEach(function (s, i) {
+      var cls = i < t.progress ? 'done' : (i === t.progress ? 'now' : '');
+      html += '<span class="tut-dot ' + cls + '">' + (i < t.progress ? '✓' : (i + 1)) + '</span>';
+    });
+    $('tutSteps').innerHTML = html;
+  }
+
+  function checkTutorial() {
+    var t = app.tutorial;
+    if (!t || !app.game || t.finished) return;
+    var lv = TUT_LEVELS[t.index];
+    if (!lv) return;
+
+    var moved = false;
+    while (t.progress < lv.steps.length && lv.steps[t.progress].done(app.game, app)) {
+      t.progress += 1;
+      moved = true;
+    }
+    if (moved) renderTutorial();
+
+    if (t.progress >= lv.steps.length && !t.finished) {
+      t.finished = true;
+      setTimeout(function () { showTutDone(t.index); }, 450);
+    }
+  }
+
+  function showTutDone(index) {
+    var lv = TUT_LEVELS[index];
+    var last = index >= TUT_LEVELS.length - 1;
+    $('tutDoneTitle').textContent = last ? '教学完成！' : '第 ' + (index + 1) + ' 关通过';
+    $('tutDoneText').textContent = last
+      ? '6 个关卡全部学完。去开一局吧——联机、单人、本地双人都能玩。'
+      : '「' + lv.title + '」学会了。下一关：' + TUT_LEVELS[index + 1].title;
+    $('btnTutNext').textContent = last ? '回到菜单' : '下一关';
+    app.tutDoneIndex = index;
+    showOverlay('ovTutDone');
   }
   /* ---------------- 求和 ---------------- */
 
@@ -1423,6 +1552,21 @@
     els.btnResolve.addEventListener('click', doResolve);
     els.btnEnd.addEventListener('click', endTurn);
     $('btnResign').addEventListener('click', resign);
+    $('btnModeTutorial').addEventListener('click', startTutorial);
+    $('btnTutNext').addEventListener('click', function () {
+      var i = (typeof app.tutDoneIndex === 'number') ? app.tutDoneIndex : 0;
+      if (i >= TUT_LEVELS.length - 1) { exitTutorial(); return; }
+      loadTutorialLevel(i + 1);
+    });
+    $('btnTutQuit').addEventListener('click', exitTutorial);
+    $('btnTutExit').addEventListener('click', exitTutorial);
+    $('btnTutSkip').addEventListener('click', function () {
+      var t = app.tutorial;
+      if (!t) return;
+      if (t.index >= TUT_LEVELS.length - 1) { exitTutorial(); return; }
+      loadTutorialLevel(t.index + 1);
+      toast('已跳到下一关');
+    });
     $('btnDraw').addEventListener('click', offerDraw);
     $('btnDrawAccept').addEventListener('click', function () { answerDraw(true); });
     $('btnDrawDecline').addEventListener('click', function () { answerDraw(false); });
@@ -1436,6 +1580,7 @@
       app.inspect = null;
       renderShop();
       updateInspectCard();
+      checkTutorial();
     });
 
 
@@ -1495,7 +1640,14 @@
     resolve: doResolve,
     endTurn: endTurn,
     resign: resign,
-    select: function (type) { app.selected = type; if (app.game) renderShop(); },
-    toast: function (msg) { toast(msg); }
+    select: function (type) { app.selected = type; if (app.game) renderShop(); checkTutorial(); },
+    click: function (q, r) { handleCellClick({ q: q, r: r, key: Hex.key(q, r) }); },
+    toast: function (msg) { toast(msg); },
+    tutorial: {
+      start: startTutorial,
+      load: loadTutorialLevel,
+      next: function () { loadTutorialLevel((app.tutorial ? app.tutorial.index : 0) + 1); },
+      exit: exitTutorial
+    }
   };
 })();

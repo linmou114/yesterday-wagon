@@ -3,6 +3,7 @@ global.window = global;
 require('../js/hex.js');
 require('../js/engine.js');
 require('../js/maps.js');
+require('../js/tutorial.js');
 
 const Hex = global.Hex;
 const ENGINE = global.ENGINE;
@@ -296,6 +297,50 @@ console.log('== 7.5 8 张默认地图 ==');
     });
     ok(same, `默认地图 ${i + 1} 同种子可复现`);
   });
+}
+console.log('== 7.8 新手教学关卡 ==');
+{
+  const TUT = global.TUTORIAL;
+  ok(TUT && Array.isArray(TUT.LEVELS) && TUT.LEVELS.length === 6, '教学共 6 关');
+  TUT.LEVELS.forEach((lv, i) => {
+    const g = TUT.buildLevel(ENGINE, i);
+    const want = (lv.spawn || []).length;
+    eq(g.pieces.size - 2, want, `第 ${i + 1} 关预置棋子全部落地`);
+    ok(g.energy === lv.energy, `第 ${i + 1} 关初始费用 ${lv.energy}`);
+    ok(lv.steps.length >= 1, `第 ${i + 1} 关有步骤`);
+  });
+  // 第 3 关：结算击杀
+  {
+    const g = TUT.buildLevel(ENGINE, 2);
+    g.resolve();
+    eq(TUT.units(g, 0), 0, '第 3 关结算后敌兵被击杀');
+    eq(TUT.units(g, 1), 3, '第 3 关我方 3 个步兵存活');
+  }
+  // 第 4 关：炮兵射程 2
+  {
+    const g = TUT.buildLevel(ENGINE, 3);
+    g.resolve();
+    eq(TUT.units(g, 0), 0, '第 4 关炮兵打到 2 格外的敌人');
+  }
+  // 第 5 关：断联移除
+  {
+    const g = TUT.buildLevel(ENGINE, 4);
+    g.resolve();
+    eq(TUT.units(g, 0), 1, '第 5 关断联移除后只剩 1 个敌兵');
+  }
+  // 第 6 关：放炮拆基地
+  {
+    const g = TUT.buildLevel(ENGINE, 5);
+    const base = g.board.baseA;
+    const spot = [...g.legalCells(1)].find((k) => {
+      const c = Hex.parse(k);
+      return Hex.distance(c, base) <= 2 && g.canPlace(1, 'artillery', k).ok;
+    });
+    ok(!!spot, '第 6 关存在射程内的落炮点');
+    g.place(1, 'artillery', spot);
+    g.resolve();
+    ok(g.over && g.winner === 1, '第 6 关结算后赤方拆掉基地获胜');
+  }
 }
 console.log('== 8. 结算不限次数 ==');
 {

@@ -1035,6 +1035,88 @@ input[type="range"]::-moz-range-thumb {
   border-color: rgba(45, 212, 191, 0.45);
   background: rgba(45, 212, 191, 0.12);
 }
+/* ---------- 新手教学 ---------- */
+
+.tut-panel {
+  align-self: start;
+  flex: 0 0 auto !important;
+  border-color: rgba(96, 165, 250, 0.42) !important;
+  background: linear-gradient(180deg, rgba(96, 165, 250, 0.13), rgba(96, 165, 250, 0.03)) !important;
+}
+
+.tut-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.tut-badge {
+  font-size: 10px;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: rgba(96, 165, 250, 0.22);
+  border: 1px solid rgba(96, 165, 250, 0.5);
+  color: #bfdbfe;
+  letter-spacing: .08em;
+}
+.tut-level { font-size: 10.5px; color: var(--muted); letter-spacing: .08em; }
+
+.tut-title {
+  margin: 0 0 6px;
+  font-size: 14px;
+  letter-spacing: .04em;
+  color: #dbeafe;
+}
+
+.tut-text {
+  margin: 0 0 10px;
+  font-size: 12px;
+  line-height: 1.75;
+  color: #a8bed8;
+  min-height: 42px;
+}
+
+.tut-steps { display: flex; gap: 6px; margin-bottom: 10px; }
+
+.tut-dot {
+  width: 20px;
+  height: 20px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  font-size: 10.5px;
+  border: 1px solid var(--line);
+  color: var(--muted);
+}
+.tut-dot.now {
+  border-color: rgba(96, 165, 250, 0.8);
+  color: #dbeafe;
+  background: rgba(96, 165, 250, 0.2);
+  box-shadow: 0 0 0 3px rgba(96, 165, 250, 0.12);
+}
+.tut-dot.done {
+  border-color: rgba(45, 212, 191, 0.7);
+  color: #7ff2e2;
+  background: rgba(45, 212, 191, 0.16);
+}
+
+.tut-actions { display: flex; gap: 8px; }
+.tut-actions .btn { flex: 1; padding: 7px 8px; font-size: 11.5px; }
+
+/* 过关弹窗 */
+.modal.tut-done { width: min(400px, 100%); text-align: center; }
+.tut-check {
+  width: 54px;
+  height: 54px;
+  margin: 0 auto 12px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  font-size: 26px;
+  color: #06231f;
+  background: linear-gradient(160deg, #7ff2e2, #2dd4bf);
+  box-shadow: 0 0 34px rgba(45, 212, 191, 0.55);
+}
 /* ---------- 设置面板 ---------- */
 
 .set-group { margin-bottom: 18px; }

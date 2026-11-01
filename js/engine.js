@@ -252,6 +252,20 @@
     return p;
   };
 
+  // 教学 / 测试专用：无视放置规则直接把棋子摆上去（hp 可指定，用来做残血场景）
+  Game.prototype.spawn = function (owner, typeId, cellKey, hp) {
+    var t = this.types[typeId];
+    if (!t) return null;
+    if (!this.board.cells.has(cellKey)) return null;
+    if (this.occupant.has(cellKey)) return null;
+    var p = {
+      id: this.nextId++, owner: owner, kind: typeId, key: cellKey,
+      hp: (hp == null ? t.hp : hp), maxHp: t.hp, atk: t.atk, range: t.range
+    };
+    this.pieces.set(p.id, p);
+    this.occupant.set(cellKey, p.id);
+    return p;
+  };
   Game.prototype.removeById = function (id) {
     var p = this.pieces.get(id);
     if (!p) return null;
