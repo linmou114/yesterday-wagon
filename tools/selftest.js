@@ -331,17 +331,22 @@ console.log('== 7.8 新手教学关卡 ==');
     eq(TUT.units(g2, 1), 1, '坦克关：同样位置放步兵会被 3 点打死');
   }
 
-  // 炮兵关：两个棋子都距敌 2 格，只有炮兵打到
+  // 炮兵关：满血敌人 + 3 门炮，靠伤害叠加才打死（不是一炮秒杀）
   {
     const g = TUT.buildLevel(ENGINE, byKey.range);
     const foe = [...g.pieces.values()].find((p) => p.owner === 0 && p.kind === 'infantry');
-    const art = TUT.findPiece(g, 1, 'artillery');
-    const inf = TUT.findPiece(g, 1, 'infantry');
-    eq(Hex.distance(Hex.parse(art.key), Hex.parse(foe.key)), 2, '炮兵关：炮兵在 2 格外');
-    eq(Hex.distance(Hex.parse(inf.key), Hex.parse(foe.key)), 2, '炮兵关：步兵也在 2 格外');
+    eq(foe.hp, 3, '炮兵关：敌人是满血 3 点（教学里不再用残血作弊）');
+    const mine = [...g.pieces.values()].filter((p) => p.owner === 1 && p.kind !== 'base');
+    eq(mine.length, 4, '炮兵关：我方 3 门炮 + 1 个步兵');
+    ok(mine.every((p) => Hex.distance(Hex.parse(p.key), Hex.parse(foe.key)) === 2),
+      '炮兵关：所有棋子都距敌 2 格（可比性）');
+    const art = mine.filter((p) => p.kind === 'artillery');
+    eq(art.length, 3, '炮兵关：3 门炮');
+    eq(art.reduce((s, p) => s + p.atk, 0), 3, '炮兵关：三门炮合计 3 点，正好等于敌兵血量');
+    eq(g.damageMap().get(foe.id), 3, '炮兵关：敌兵实际吃到 3 点');
     g.resolve();
-    eq(TUT.units(g, 0), 0, '炮兵关：只有炮兵打到并击杀');
-    eq(TUT.units(g, 1), 2, '炮兵关：我方毫发无伤');
+    eq(TUT.units(g, 0), 0, '炮兵关：结算后敌兵被击杀');
+    eq(TUT.units(g, 1), 4, '炮兵关：我方毫发无伤');
   }
 
   // 断联关 / 拆基地关

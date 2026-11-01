@@ -125,13 +125,15 @@
       energy: 0,
       types: [],
       spawn: [
-        { owner: 0, type: 'infantry', cell: '0,-1', hp: 1 },
+        { owner: 0, type: 'infantry', cell: '0,-1' },
         { owner: 1, type: 'artillery', cell: '0,1' },
-        { owner: 1, type: 'infantry', cell: '1,0' }
+        { owner: 1, type: 'artillery', cell: '1,0' },
+        { owner: 1, type: 'artillery', cell: '2,-1' },
+        { owner: 1, type: 'infantry', cell: '-1,1' }
       ],
       steps: [
         {
-          text: '敌人离你这两个棋子都是 2 格。步兵射程只有 1，够不到；炮兵的射程是 2，正好打得到。点「结算」—— 只有炮兵会开火。',
+          text: '敌方步兵离你所有棋子都是 2 格。步兵射程 1，够不到；炮兵射程 2，正好打得到。注意：一门炮只打 1 点，杀不掉 3 血的步兵 —— 但三门炮一起开火就是 3 点，正好打死。点「结算」看看谁在开火。',
           done: function (g) { return opponentUnits(g, 1) === 0; }
         }
       ]
