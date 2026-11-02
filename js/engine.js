@@ -56,8 +56,8 @@
     },
     slave: {
       id: 'slave', name: '奴隶', glyph: '隶', order: 7,
-      hp: 2, atk: 1, range: 1, cost: 0, noDeploy: true,
-      desc: '只能由奴隶主免费召唤，不能直接用费用部署。'
+      hp: 2, atk: 1, range: 1, cost: 0, noDeploy: true, requiresNear: 'slaver',
+      desc: '只能由奴隶主免费召唤，且必须放在奴隶主周围一圈的空格上。'
     }
   };
 
@@ -310,6 +310,21 @@
     if (!cell) return { ok: false, msg: '地图外' };
     if (cell.obstacle) return { ok: false, msg: '这里是障碍' };
 
+    // 有些兵种必须贴着某个兵种放（例如奴隶要挨着奴隶主）
+    if (t.requiresNear) {
+      var need = this.types[t.requiresNear] || TYPES[t.requiresNear];
+      var near = false;
+      var here = Hex.parse(cellKey);
+      var self = this;
+      this.pieces.forEach(function (p) {
+        if (p.owner !== owner || p.kind !== t.requiresNear) return;
+        if (Hex.distance(Hex.parse(p.key), here) === 1) near = true;
+      });
+      if (!near) {
+        return { ok: false, msg: '只能放在「' + ((need && need.name) || t.requiresNear) + '」周围一圈' };
+      }
+    }
+
     // 目标格上已经有棋子
     var occupiedId = this.occupant.get(cellKey);
     if (occupiedId != null) {
@@ -386,6 +401,22 @@
   Game.prototype.freeSlavesLeft = function (owner) {
     var used = this.slavesUsed[owner] || 0;
     return Math.max(0, this.slaverCount(owner) - used);
+  };
+
+  // 奴隶能放的格子：连通块边缘 ∩ 奴隶主周围一圈
+  Game.prototype.slaveCells = function (owner) {
+    var frontier = this.legalCells(owner);
+    var out = new Set();
+    var self = this;
+    this.pieces.forEach(function (p) {
+      if (p.owner !== owner || p.kind !== 'slaver') return;
+      var c = Hex.parse(p.key);
+      Hex.neighbors(c.q, c.r).forEach(function (n) {
+        var k = Hex.key(n.q, n.r);
+        if (frontier.has(k)) out.add(k);
+      });
+    });
+    return out;
   };
 
   Game.prototype.placeSlave = function (owner, cellKey) {

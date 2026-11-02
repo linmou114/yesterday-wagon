@@ -258,6 +258,9 @@
     var g = app.game;
     if (!g) return;
     app.legal = g.over ? new Set() : g.legalCells(g.active);
+    if (!g.over && app.selected === '__slave' && g.slaveCells) {
+      app.legal = g.slaveCells(g.active);      // 奴隶只能放奴隶主周围
+    }
     if (app.pendingReplace) {
       var tp = g.pieceAt(app.pendingReplace);
       if (!tp || tp.owner !== g.active || tp.kind === 'base' || g.over) app.pendingReplace = null;
@@ -366,7 +369,7 @@
           '<span class="card-key">F</span>' +
           '<span class="card-name">' + st.name + ' ×' + quota + '</span>' +
           '<span class="card-cost">免费</span>' +
-          '<span class="card-line">血 ' + st.hp + ' · 攻 ' + st.atk + ' · 射 ' + st.range + '</span>' +
+          '<span class="card-line">血 ' + st.hp + ' · 攻 ' + st.atk + ' · 射 ' + st.range + ' · 需挨着奴隶主</span>' +
           '</button>';
       }
     }
@@ -1506,9 +1509,8 @@ function placePending() {
 
       app.selected = type;
       app.inspect = null;
-      renderShop();
+      refresh();          // 换兵种会改变合法落点（例如奴隶）
       updateInspectCard();
-      checkTutorial();
     });
 
 
@@ -1606,7 +1608,7 @@ function placePending() {
     resolve: doResolve,
     endTurn: endTurn,
     resign: resign,
-    select: function (type) { app.selected = type; if (app.game) renderShop(); checkTutorial(); },
+    select: function (type) { app.selected = type; if (app.game) refresh(); else renderShop(); },
     click: function (q, r) { handleCellClick({ q: q, r: r, key: Hex.key(q, r) }); },
     toast: function (msg) { toast(msg); },
     save: saveResume,

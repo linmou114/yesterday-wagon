@@ -113,7 +113,7 @@
   function chooseSlave(g) {
     var me = g.active;
     if (typeof g.freeSlavesLeft !== 'function' || g.freeSlavesLeft(me) <= 0) return null;
-    var legal = Array.from(g.legalCells(me));
+    var legal = g.slaveCells ? Array.from(g.slaveCells(me)) : Array.from(g.legalCells(me));
     if (!legal.length) return null;
     var best = null;
     for (var j = 0; j < legal.length; j++) {

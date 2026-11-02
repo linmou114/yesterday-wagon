@@ -491,12 +491,12 @@ console.log('== 10. 新兵种：指挥所 / 狙击兵 / 奴隶主 ==');
     g.spawn(1, 'slaver', '0,2');
     eq(g.freeSlavesLeft(1), 1, '奴隶主：本回合 1 个免费奴隶');
     const before = g.energy;
-    const legal = [...g.legalCells(1)][0];
+    const legal = [...g.slaveCells(1)][0];
     g.placeSlave(1, legal);
     eq(g.energy, before, '奴隶主：召唤奴隶不花费用');
     eq(g.freeSlavesLeft(1), 0, '奴隶主：用掉后额度归零');
     let threw = false;
-    try { g.placeSlave(1, [...g.legalCells(1)][0]); } catch (e) { threw = true; }
+    try { g.placeSlave(1, [...g.slaveCells(1)][0]); } catch (e) { threw = true; }
     ok(threw, '奴隶主：额度用完不能再召唤');
     const cant = g.canPlace(1, 'slave', [...g.legalCells(1)][0]);
     ok(!cant.ok, '奴隶：不能直接用费用部署');
@@ -671,6 +671,41 @@ console.log('== 13. 狙击兵朝向 ==');
   const sn2 = g.spawn(1, 'sniper', '1,1', 2, 3);   // 朝左
   const c2 = [...g.attackCells(sn2)];
   ok(c2.every((k) => Hex.parse(k).q < 1), '方向 3 的狙击兵只打左侧');
+}
+console.log('== 14. 奴隶必须挨着奴隶主 ==');
+{
+  const g = new ENGINE.Game({
+    side: 5, density: 0, seed: 81,
+    rules: { baseHp: 4, energyPerTurn: 9, firstPlayer: 1, firstTurnEnergy: [9, 9] }
+  });
+  clearBoard(g);
+  eq(g.slaveCells(1).size, 0, '没有奴隶主时没有可放格');
+
+  force(g, 1, 'slaver', 0, 3);
+  force(g, 1, 'infantry', 0, 2);
+  force(g, 1, 'infantry', 0, 1);
+
+  const near = [...g.slaveCells(1)];
+  const frontier = [...g.legalCells(1)];
+  const far = frontier.filter((k) => near.indexOf(k) < 0);
+
+  ok(near.length > 0, '有奴隶主时出现可放格（' + near.length + ' 个）');
+  ok(far.length > 0, '同时存在离奴隶主较远的边缘格');
+  near.forEach((k) => {
+    const c = Hex.parse(k);
+    const d = Hex.distance(c, Hex.parse('0,3'));
+    eq(d, 1, '奴隶可放格都在奴隶主相邻（' + k + '）');
+  });
+
+  const bad = g.canPlace(1, 'slave', far[0], { free: true });
+  ok(!bad.ok && /奴隶主/.test(bad.msg), '远处放奴隶被拒绝');
+  ok(g.canPlace(1, 'slave', near[0], { free: true }).ok, '奴隶主旁边可以放');
+  ok(g.canPlace(1, 'infantry', far[0]).ok, '普通兵种不受这条限制影响');
+
+  // 放下来之后棋子确实在那儿
+  g.placeSlave(1, near[0]);
+  ok(!!g.pieceAt(near[0]), '奴隶落到指定格');
+  eq(g.freeSlavesLeft(1), 0, '额度扣掉');
 }
 console.log('\n通过 ' + pass + ' 项，失败 ' + fail + ' 项');
 process.exit(fail ? 1 : 0);
