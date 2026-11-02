@@ -453,7 +453,7 @@ console.log('== 10. 新兵种：指挥所 / 狙击兵 / 奴隶主 ==');
     eq(g.atkOf(cmd), 0, '指挥所：自身不能攻击');
     eq(g.attackCells(cmd).size, 0, '指挥所：攻击范围为空');
     force(g, 1, 'command', -1, 1);
-    eq(g.atkOf(inf), 3, '指挥所：两个光环可以叠加');
+    eq(g.atkOf(inf), 2, '指挥所：同类光环取最高，不叠加');
   }
 
   // 狙击兵直线
@@ -706,6 +706,84 @@ console.log('== 14. 奴隶必须挨着奴隶主 ==');
   g.placeSlave(1, near[0]);
   ok(!!g.pieceAt(near[0]), '奴隶落到指定格');
   eq(g.freeSlavesLeft(1), 0, '额度扣掉');
+}
+console.log('== 15. 同类光环取最高 ==');
+{
+  const mk = (types) => new ENGINE.Game({
+    side: 5, density: 0, seed: 91,
+    rules: { baseHp: 4, energyPerTurn: 20, firstPlayer: 1, firstTurnEnergy: [20, 20] },
+    types: types || {}
+  });
+
+  // 两个 +1 加攻指挥所 → 只算 +1
+  {
+    const g = mk();
+    clearBoard(g);
+    const inf = force(g, 1, 'infantry', 0, 1);
+    force(g, 1, 'command', 1, 1);
+    eq(g.atkOf(inf), 2, '一个指挥所：+1');
+    force(g, 1, 'command', -1, 1);
+    eq(g.atkOf(inf), 2, '两个同类指挥所：仍然只 +1（取最高）');
+  }
+
+  // 一强一弱 → 取强
+  {
+    const g = mk({
+      big: { name: '大光环', hp: 2, atk: 0, range: 0, cost: 2, rangeMode: 'none',
+             aura: { radius: 2, effect: 'atk', amount: 3 } }
+    });
+    clearBoard(g);
+    const inf = force(g, 1, 'infantry', 0, 2);
+    force(g, 1, 'big', 0, 1);          // +3
+    eq(g.atkOf(inf), 4, '大光环：+3');
+    force(g, 1, 'command', 1, 2);      // +1，弱的那个不该叠加
+    eq(g.atkOf(inf), 4, '强光环 + 弱光环：只取最高的 +3');
+  }
+
+  // 不同效果可以同时生效（加攻 + 加血）
+  {
+    const g = mk({
+      heal: { name: '治疗', hp: 2, atk: 0, range: 0, cost: 2, rangeMode: 'none',
+              aura: { radius: 1, effect: 'hp', amount: 2 } }
+    });
+    clearBoard(g);
+    const inf = force(g, 1, 'infantry', 0, 2);
+    force(g, 1, 'command', 1, 2);
+    force(g, 1, 'heal', -1, 2);
+    eq(g.atkOf(inf), 2, '加攻光环生效');
+    eq(g.hpOf(inf), 5, '加血光环同时生效（不同效果互不影响）');
+  }
+
+  // 敌方减益同类也只取最高
+  {
+    const g = mk({
+      w1: { name: '削弱A', hp: 2, atk: 0, range: 0, cost: 1, rangeMode: 'none',
+            aura: { radius: 2, effect: 'enemyAtk', amount: 1 } },
+      w2: { name: '削弱B', hp: 2, atk: 0, range: 0, cost: 1, rangeMode: 'none',
+            aura: { radius: 2, effect: 'enemyAtk', amount: 1 } }
+    });
+    clearBoard(g);
+    const foe = force(g, 0, 'tank', 0, 1);   // 攻击 1
+    force(g, 1, 'w1', 0, 2);
+    eq(g.atkOf(foe), 0, '一个减攻光环：1 → 0');
+    force(g, 1, 'w2', 1, 2);
+    eq(g.atkOf(foe), 0, '两个同类减攻光环：不会变成负数，也不叠加');
+  }
+
+  // 加攻与减攻属于不同效果，可以同时存在
+  {
+    const g = mk({
+      debuff: { name: '腐蚀', hp: 2, atk: 0, range: 0, cost: 1, rangeMode: 'none',
+                aura: { radius: 2, effect: 'enemyAtk', amount: 1 } }
+    });
+    clearBoard(g);
+    const inf = force(g, 1, 'infantry', 0, 2);
+    const foe = force(g, 0, 'infantry', 0, 0);
+    force(g, 1, 'command', 1, 2);     // 我方 +1
+    force(g, 1, 'debuff', -1, 2);     // 敌方 -1
+    eq(g.atkOf(inf), 2, '我方被自己的加攻光环加强');
+    eq(g.atkOf(foe), 0, '敌方被减攻光环削弱');
+  }
 }
 console.log('\n通过 ' + pass + ' 项，失败 ' + fail + ' 项');
 process.exit(fail ? 1 : 0);

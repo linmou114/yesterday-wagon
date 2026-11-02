@@ -483,11 +483,11 @@
     return t ? normAura(t.aura) : null;
   };
 
-  // 统计覆盖到 target 的某个效果的光环总量
-  Game.prototype.auraSum = function (target, effect) {
+  // 覆盖到 target 的某个效果里，数值最高的那一个（同类光环不叠加，取最高）
+  Game.prototype.auraMax = function (target, effect) {
     var self = this;
     var from = Hex.parse(target.key);
-    var total = 0;
+    var best = 0;
     this.pieces.forEach(function (o) {
       if (o.kind === 'base') return;
       var a = self.auraOf(o);
@@ -496,16 +496,21 @@
       var friendly = (a.effect === 'atk' || a.effect === 'hp');
       if (friendly && o.owner !== target.owner) return;
       if (!friendly && o.owner === target.owner) return;
-      total += a.amount;
+      if (a.amount > best) best = a.amount;
     });
-    return total;
+    return best;
+  };
+
+  // 旧名字保留（等价于取最高值）
+  Game.prototype.auraSum = function (target, effect) {
+    return this.auraMax(target, effect);
   };
 
   // 实际攻击力（受光环影响）
   Game.prototype.atkOf = function (piece) {
     var base = piece.atk || 0;
     if (base <= 0) return 0;
-    var v = base + this.auraSum(piece, 'atk') - this.auraSum(piece, 'enemyAtk');
+    var v = base + this.auraMax(piece, 'atk') - this.auraMax(piece, 'enemyAtk');
     return Math.max(0, v);
   };
 
@@ -513,7 +518,7 @@
   Game.prototype.hpOf = function (piece) {
     var base = piece.hp || 0;
     if (base <= 0) return 0;
-    var v = base + this.auraSum(piece, 'hp') - this.auraSum(piece, 'enemyHp');
+    var v = base + this.auraMax(piece, 'hp') - this.auraMax(piece, 'enemyHp');
     return Math.max(1, v);
   };
 

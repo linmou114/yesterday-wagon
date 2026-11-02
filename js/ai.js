@@ -22,21 +22,33 @@
   var LOSS = -100000;
   var DRAW = -500;
 
-  // 这个棋子的光环覆盖了多少「点数」（己方受益 / 敌方受损）
+  // 这个棋子的光环「边际」贡献多少点数（同类光环不叠加，只算它能顶上去的那部分）
   function auraCoverage(g, p) {
     var a = (g.auraOf ? g.auraOf(p) : null);
     if (!a) return 0;
     var from = Hex.parse(p.key);
-    var n = 0;
+    var total = 0;
     g.pieces.forEach(function (o) {
       if (o.id === p.id) return;
       if (Hex.distance(Hex.parse(o.key), from) > a.radius) return;
       var friendly = (a.effect === 'atk' || a.effect === 'hp');
       if (friendly && o.owner !== p.owner) return;
       if (!friendly && o.owner === p.owner) return;
-      n += 1;
+      // 看看这个目标身上已有的同类光环最高是多少（不算自己）
+      var best = 0;
+      g.pieces.forEach(function (q) {
+        if (q.id === p.id || q.id === o.id) return;
+        var b = (g.auraOf ? g.auraOf(q) : null);
+        if (!b || b.effect !== a.effect) return;
+        if (Hex.distance(Hex.parse(q.key), Hex.parse(o.key)) > b.radius) return;
+        var bf = (b.effect === 'atk' || b.effect === 'hp');
+        if (bf && q.owner !== o.owner) return;
+        if (!bf && q.owner === o.owner) return;
+        if (b.amount > best) best = b.amount;
+      });
+      if (a.amount > best) total += a.amount - best;
     });
-    return n * a.amount;
+    return total;
   }
 
   // 单棋子的静态价值（把光环、实际攻防都算进去）
