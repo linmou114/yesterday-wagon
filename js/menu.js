@@ -301,7 +301,7 @@
   function statLine(m) {
     var rangeTxt = (m.rangeMode === 'line') ? ('直线 ' + m.range) : ('射 ' + m.range);
     if (m.rangeMode === 'none') rangeTxt = '不攻击';
-    var extra = m.aura ? ' · 光环' : '';
+    var extra = m.aura ? (' · ' + MODS.auraText(m.aura)) : '';
     return '血 ' + m.hp + ' · 攻 ' + m.atk + ' · ' + rangeTxt + ' · ' + m.cost + ' 费' + extra;
   }
 
@@ -369,8 +369,17 @@
       range: $('modRange').value,
       cost: $('modCost').value,
       rangeMode: modeBtn ? modeBtn.getAttribute('data-m') : 'circle',
-      aura: $('modAura').checked
+      aura: $('modAura').checked ? {
+        radius: $('modAuraRadius').value,
+        effect: (auraEffBtn() || { getAttribute: function () { return 'atk'; } }).getAttribute('data-e'),
+        amount: $('modAuraAmount').value
+      } : null
     });
+  }
+
+  function auraEffBtn() {
+    var host = $('modAuraEffect');
+    return host ? host.querySelector('button.on') : null;
   }
 
   function paintEditor() {
@@ -386,7 +395,7 @@
       '</button>';
 
     var tips = [];
-    if (m.aura) tips.push('光环：相邻己方 +1 攻（自身不攻击时也能起作用）');
+    if (m.aura) tips.push(MODS.auraText(m.aura) + '（自己站在原地就能一直生效）');
     if (m.rangeMode === 'line') tips.push('部署时要选方向，只打该方向的直线');
     if (m.atk <= 0) tips.push('攻击力 0 → 只能当光环或肉盾');
     if (m.cost === 0) tips.push('费用 0 → 每回合可以免费铺，注意别太强');
@@ -404,6 +413,13 @@
     $('modRange').value = d.range;
     $('modCost').value = d.cost;
     $('modAura').checked = !!d.aura;
+    var au = d.aura || { radius: 1, effect: 'atk', amount: 1 };
+    $('modAuraRadius').value = au.radius;
+    $('modAuraAmount').value = au.amount;
+    Array.prototype.forEach.call($('modAuraEffect').querySelectorAll('button'), function (b) {
+      b.classList.toggle('on', b.getAttribute('data-e') === au.effect);
+    });
+    $('auraBox').classList.toggle('hidden', !d.aura);
     Array.prototype.forEach.call($('modMode').querySelectorAll('button'), function (b) {
       b.classList.toggle('on', b.getAttribute('data-m') === d.rangeMode);
     });
@@ -530,7 +546,20 @@
       paintEditor();
     });
 
-    ['modName', 'modGlyph', 'modDesc', 'modHp', 'modAtk', 'modRange', 'modCost', 'modAura'].forEach(function (id) {
+    $('modAura').addEventListener('change', function () {
+      $('auraBox').classList.toggle('hidden', !$('modAura').checked);
+      paintEditor();
+    });
+    $('modAuraEffect').addEventListener('click', function (e) {
+      var b = e.target.closest ? e.target.closest('button') : null;
+      if (!b) return;
+      Array.prototype.forEach.call($('modAuraEffect').querySelectorAll('button'), function (x) {
+        x.classList.toggle('on', x === b);
+      });
+      paintEditor();
+    });
+    ['modName', 'modGlyph', 'modDesc', 'modHp', 'modAtk', 'modRange', 'modCost',
+      'modAuraRadius', 'modAuraAmount'].forEach(function (id) {
       var el = $(id);
       if (!el) return;
       el.addEventListener('input', paintEditor);

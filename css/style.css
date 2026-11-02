@@ -1080,6 +1080,23 @@ input[type="range"]::-moz-range-thumb {
   box-shadow: 0 0 0 1px rgba(251, 191, 36, 0.45), 0 12px 30px -20px rgba(251, 191, 36, 0.9);
   background: linear-gradient(180deg, rgba(251, 191, 36, 0.26), rgba(251, 191, 36, 0.08));
 }
+/* 光环配置块 */
+.aura-box {
+  margin-top: 6px;
+  padding: 10px;
+  border-radius: 10px;
+  border: 1px dashed rgba(251, 191, 36, 0.45);
+  background: rgba(251, 191, 36, 0.06);
+}
+.aura-box .set-row { margin-bottom: 6px; }
+.aura-box .seg button { font-size: 11px; padding: 6px 4px; }
+
+/* 已选中待替换的棋子 */
+.card.armed {
+  border-color: rgba(251, 191, 36, 0.75) !important;
+  box-shadow: 0 0 0 1px rgba(251, 191, 36, 0.35), 0 10px 26px -18px rgba(251, 191, 36, 0.9);
+}
+.card.armed .card-key { background: rgba(251, 191, 36, 0.9); color: #251a00; }
 /* 棋子详情里的「替换」按钮 */
 .ic-swap {
   display: block;
@@ -1100,6 +1117,41 @@ input[type="range"]::-moz-range-thumb {
   background: rgba(251, 191, 36, 0.24);
   border-color: rgba(251, 191, 36, 0.9);
 }
+/* 检查卡：选中态与光环说明 */
+.inspect-card.armed {
+  border-color: rgba(251, 191, 36, 0.75) !important;
+  box-shadow: 0 0 0 1px rgba(251, 191, 36, 0.35), 0 20px 50px -30px rgba(251, 191, 36, 0.9);
+}
+.ic-aura {
+  margin: 4px 0 0;
+  font-size: 11px;
+  color: #fcd34d;
+  letter-spacing: .02em;
+}
+.ic-armed {
+  margin-top: 8px;
+  padding: 6px 8px;
+  border-radius: 8px;
+  background: rgba(251, 191, 36, 0.16);
+  border: 1px solid rgba(251, 191, 36, 0.45);
+  font-size: 11.5px;
+  color: #fde68a;
+  text-align: center;
+}
+.ic-cancel {
+  display: block;
+  width: 100%;
+  margin-top: 6px;
+  padding: 5px 8px;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  background: transparent;
+  color: var(--muted);
+  font-family: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+.ic-cancel:hover { color: var(--text); border-color: rgba(255,255,255,.3); }
 /* ---------- 自建棋子（MOD） ---------- */
 
 .mod-list { display: flex; flex-direction: column; gap: 6px; margin: 6px 0 8px; }

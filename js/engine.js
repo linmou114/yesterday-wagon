@@ -40,8 +40,9 @@
     },
     command: {
       id: 'command', name: '指挥所', glyph: '指', order: 4,
-      hp: 2, atk: 0, range: 0, cost: 2, rangeMode: 'none', aura: true,
-      desc: '自己不能攻击；相邻一圈的己方棋子攻击力 +1。'
+      hp: 2, atk: 0, range: 0, cost: 2, rangeMode: 'none',
+      aura: { radius: 1, effect: 'atk', amount: 1 },
+      desc: '自己不能攻击；周围一圈的己方棋子攻击力 +1。'
     },
     sniper: {
       id: 'sniper', name: '狙击兵', glyph: '狙', order: 5,
@@ -101,7 +102,10 @@
     Object.keys(base).forEach(function (id) {
       var def = base[id];
       var t = {};
-      Object.keys(def).forEach(function (k) { t[k] = def[k]; });
+      Object.keys(def).forEach(function (k) {
+        var v = def[k];
+        t[k] = (v && typeof v === 'object') ? JSON.parse(JSON.stringify(v)) : v;
+      });
       var c = custom && custom[id];
       if (c) {
         ['hp', 'atk', 'range', 'cost'].forEach(function (k) {
@@ -125,6 +129,18 @@
       return Math.min(max, Math.max(min, Math.round(n)));
     };
     var mode = c.rangeMode === 'line' ? 'line' : (c.rangeMode === 'none' ? 'none' : 'circle');
+    var auraRaw = c.aura;
+    var aura = null;
+    if (auraRaw === true) {
+      aura = { radius: 1, effect: 'atk', amount: 1 };
+    } else if (auraRaw && typeof auraRaw === 'object') {
+      var eff = ['atk', 'hp', 'enemyAtk', 'enemyHp'].indexOf(auraRaw.effect) >= 0 ? auraRaw.effect : 'atk';
+      aura = {
+        radius: num(auraRaw.radius, 1, 3, 1),
+        effect: eff,
+        amount: num(auraRaw.amount, 1, 5, 1)
+      };
+    }
     var t = {
       id: String(id),
       name: name,
@@ -135,7 +151,7 @@
       range: num(c.range, 0, 6, 1),
       cost: num(c.cost, 0, 30, 2),
       rangeMode: mode,
-      aura: !!c.aura,
+      aura: aura,
       mod: true,
       desc: String(c.desc || '').slice(0, 120)
     };
@@ -407,17 +423,67 @@
   };
 
   // 每个棋子会吃到的敌方攻击力总和（只读，不改变局面；AI 和结算共用）
-  // 实际攻击力：棋子基础值 + 相邻己方「指挥所」提供的光环（每个 +1，可叠加）
+  /* ---------------- 光环 ---------------- */
+  // 每种兵种都可以带一个光环：{ radius, effect, amount }
+  //   effect = atk      己方在范围内攻击力 +amount
+  //          = hp       己方在范围内血量 +amount
+  //          = enemyAtk 敌方在范围内攻击力 -amount
+  //          = enemyHp  敌方在范围内血量 -amount
+  var AURA_EFFECTS = ['atk', 'hp', 'enemyAtk', 'enemyHp'];
+
+  function normAura(raw) {
+    if (raw === true) return { radius: 1, effect: 'atk', amount: 1 };
+    if (!raw || typeof raw !== 'object') return null;
+    var eff = AURA_EFFECTS.indexOf(raw.effect) >= 0 ? raw.effect : 'atk';
+    var clamp = function (v, min, max) {
+      var n = Math.round(Number(v));
+      if (!isFinite(n)) n = min;
+      return Math.min(max, Math.max(min, n));
+    };
+    return {
+      radius: clamp(raw.radius, 1, 3),
+      effect: eff,
+      amount: clamp(raw.amount, 1, 5)
+    };
+  }
+
+  Game.prototype.auraOf = function (piece) {
+    var t = this.types[piece.kind] || TYPES[piece.kind];
+    return t ? normAura(t.aura) : null;
+  };
+
+  // 统计覆盖到 target 的某个效果的光环总量
+  Game.prototype.auraSum = function (target, effect) {
+    var self = this;
+    var from = Hex.parse(target.key);
+    var total = 0;
+    this.pieces.forEach(function (o) {
+      if (o.kind === 'base') return;
+      var a = self.auraOf(o);
+      if (!a || a.effect !== effect) return;
+      if (Hex.distance(Hex.parse(o.key), from) > a.radius) return;
+      var friendly = (a.effect === 'atk' || a.effect === 'hp');
+      if (friendly && o.owner !== target.owner) return;
+      if (!friendly && o.owner === target.owner) return;
+      total += a.amount;
+    });
+    return total;
+  };
+
+  // 实际攻击力（受光环影响）
   Game.prototype.atkOf = function (piece) {
     var base = piece.atk || 0;
     if (base <= 0) return 0;
-    var from = Hex.parse(piece.key);
-    var bonus = 0;
-    this.pieces.forEach(function (o) {
-      if (o.owner !== piece.owner || o.kind !== 'command') return;
-      if (Hex.distance(Hex.parse(o.key), from) === 1) bonus += 1;
-    });
-    return base + bonus;
+    var v = base + this.auraSum(piece, 'atk') - this.auraSum(piece, 'enemyAtk');
+    return Math.max(0, v);
+  };
+
+  // 实际血量（受光环影响，最低 1）
+  Game.prototype.hpOf = function (piece) {
+    var base = piece.hp || 0;
+    if (base <= 0) return 0;
+    var v = base + this.auraSum(piece, 'hp') - this.auraSum(piece, 'enemyHp');
+    return Math.max(1, v);
   };
 
   // 某个棋子能打到的格子集合
@@ -490,7 +556,7 @@
     for (var m = 0; m < all.length; m++) {
       var p = all[m];
       var dmg = damage.get(p.id);
-      if (dmg > 0 && dmg >= p.hp) killed.push(p);
+      if (dmg > 0 && dmg >= this.hpOf(p)) killed.push(p);
     }
     var killedIds = new Set(killed.map(function (p) { return p.id; }));
 

@@ -245,8 +245,30 @@
           </div>
           <label class="mod-check">
             <input id="modAura" type="checkbox" />
-            <span>光环：相邻的己方棋子攻击力 +1</span>
+            <span>带光环（影响周围一圈的棋子）</span>
           </label>
+
+          <div id="auraBox" class="aura-box hidden">
+            <div class="set-row stack">
+              <label>光环效果</label>
+              <div class="seg" id="modAuraEffect">
+                <button type="button" data-e="atk">己方加攻</button>
+                <button type="button" data-e="hp">己方加血</button>
+                <button type="button" data-e="enemyAtk">敌方减攻</button>
+                <button type="button" data-e="enemyHp">敌方减血</button>
+              </div>
+            </div>
+            <div class="set-row">
+              <label for="modAuraRadius">光环范围</label>
+              <input id="modAuraRadius" class="num" type="number" min="1" max="3" step="1" value="1" />
+              <span class="unit">格</span>
+            </div>
+            <div class="set-row">
+              <label for="modAuraAmount">效果数值</label>
+              <input id="modAuraAmount" class="num" type="number" min="1" max="5" step="1" value="1" />
+              <span class="unit">点</span>
+            </div>
+          </div>
         </div>
       </div>
 

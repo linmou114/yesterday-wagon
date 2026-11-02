@@ -1,4 +1,4 @@
-/* =========================================================
+﻿/* =========================================================
  * mods.js —— 自建兵种（mod）的公共逻辑
  *
  *   · 定义校验与归一化
@@ -24,6 +24,18 @@
   }
 
   // 把任意输入洗成安全、完整的兵种定义
+  var AURA_EFFECTS = ['atk', 'hp', 'enemyAtk', 'enemyHp'];
+
+  function normalizeAura(raw) {
+    if (raw === true) return { radius: 1, effect: 'atk', amount: 1 };
+    if (!raw || typeof raw !== 'object') return null;
+    return {
+      radius: clamp(raw.radius, 1, 3, 1),
+      effect: AURA_EFFECTS.indexOf(raw.effect) >= 0 ? raw.effect : 'atk',
+      amount: clamp(raw.amount, 1, 5, 1)
+    };
+  }
+
   function normalize(raw) {
     raw = raw || {};
     var name = String(raw.name || '').trim().slice(0, MAX_NAME);
@@ -36,7 +48,7 @@
       range: clamp(raw.range, 0, 6, 1),
       cost: clamp(raw.cost, 0, 30, 2),
       rangeMode: mode,
-      aura: !!raw.aura,
+      aura: normalizeAura(raw.aura),
       desc: String(raw.desc || '').slice(0, MAX_DESC)
     };
     if (mode === 'none') out.range = 0;
@@ -163,7 +175,23 @@
     });
   }
 
+  var AURA_LABEL = {
+    atk: '己方攻击力',
+    hp: '己方血量',
+    enemyAtk: '敌方攻击力',
+    enemyHp: '敌方血量'
+  };
+
+  function auraText(a) {
+    if (!a) return '';
+    var sign = (a.effect === 'enemyAtk' || a.effect === 'enemyHp') ? ' -' : ' +';
+    return '光环：' + a.radius + ' 格内 ' + AURA_LABEL[a.effect] + sign + a.amount;
+  }
+
   root.MODS = {
+    AURA_EFFECTS: AURA_EFFECTS,
+    AURA_LABEL: AURA_LABEL,
+    auraText: auraText,
     MAX_NAME: MAX_NAME,
     MAX_DESC: MAX_DESC,
     MAX_MODS: MAX_MODS,

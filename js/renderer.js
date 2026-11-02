@@ -197,6 +197,19 @@ window.Renderer = (function () {
     // 4. 棋子
     g.pieces.forEach(function (p) { self.drawPiece(p, 1); });
 
+    // 4.1 已选中待替换的棋子：外圈高亮
+    if (ui.pendingReplace) {
+      var pc = Hex.parse(ui.pendingReplace);
+      var pp = this.cellCenter(pc.q, pc.r);
+      this.hexPath(pp.x, pp.y, s * 0.95);
+      ctx.save();
+      ctx.setLineDash([7, 4]);
+      ctx.lineWidth = 2.4;
+      ctx.strokeStyle = 'rgba(251,191,36,0.95)';
+      ctx.stroke();
+      ctx.restore();
+    }
+
     // 4.2 可被替换的己方棋子：右上角画一个琥珀色双箭头
     var swapCells = ui.replaceable || EMPTY;
     if (selected && !g.over && swapCells.size) {

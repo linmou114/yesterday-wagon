@@ -62,6 +62,7 @@
         effects: app.effects,
         pending: app.pending,
         replaceable: app.replaceable || EMPTY_SET,
+        pendingReplace: app.pendingReplace || null,
         canAfford: !!g && selectedAffordable()
       };
     });
@@ -243,6 +244,10 @@
     var g = app.game;
     if (!g) return;
     app.legal = g.over ? new Set() : g.legalCells(g.active);
+    if (app.pendingReplace) {
+      var tp = g.pieceAt(app.pendingReplace);
+      if (!tp || tp.owner !== g.active || tp.kind === 'base' || g.over) app.pendingReplace = null;
+    }
     app.replaceable = (g.over || !isMyTurn() || !g.replaceableCells)
       ? EMPTY_SET
       : g.replaceableCells(g.active);
@@ -327,7 +332,8 @@
       var afford = g.energy >= t.cost && !g.over;
       var rangeTxt = (t.rangeMode === 'line') ? ('直线 ' + t.range) : ('射 ' + t.range);
       html += '<button type="button" class="card' + (app.selected === id ? ' sel' : '') +
-        (afford ? '' : ' poor') + '" data-type="' + id + '">' +
+        (afford ? '' : ' poor') +
+        (app.pendingReplace && afford ? ' armed' : '') + '" data-type="' + id + '">' +
         '<span class="card-key">' + (idx + 1) + '</span>' +
         '<span class="card-name">' + t.name + '</span>' +
         '<span class="card-cost">' + t.cost + ' 费</span>' +
@@ -395,22 +401,37 @@
     var t = isBase
       ? { glyph: '基', name: '大本营', desc: '血量 4。被敌方攻击合计满 4 点就会被摧毁。' }
       : typesOf()[p.kind];
-    var sel = typesOf()[app.selected];
-    var canSwap = !isBase && !g.over && p.owner === g.active && isMyTurn() &&
-      sel && sel.id !== p.kind &&
-      (app.selected !== '__slave' ? (g.energy >= sel.cost) : true);
+    var armed = app.pendingReplace === p.key;
+    var hpNow = (g.hpOf && !isBase) ? g.hpOf(p) : p.hp;
+    var atkNow = (g.atkOf && !isBase) ? g.atkOf(p) : p.atk;
+    var stat = isBase
+      ? '血量 ' + p.hp + ' / ' + (g.rules ? g.rules.baseHp : 4)
+      : ('血量 ' + hpNow + (hpNow !== p.hp ? '（' + p.hp + '+' + (hpNow - p.hp) + '）' : '') +
+         ' · 攻击 ' + atkNow + (atkNow !== p.atk ? '（' + p.atk + '+' + (atkNow - p.atk) + '）' : '') +
+         ' · 射程 ' + p.range);
+
+    // 光环信息
+    var auraLine = '';
+    var aura = (g.auraOf && !isBase) ? g.auraOf(p) : null;
+    if (aura) {
+      var label = { atk: '己方攻击力', hp: '己方血量', enemyAtk: '敌方攻击力', enemyHp: '敌方血量' }[aura.effect];
+      var sign = (aura.effect === 'enemyAtk' || aura.effect === 'enemyHp') ? ' −' : ' +';
+      auraLine = '<p class="ic-aura">◎ ' + aura.radius + ' 格内 ' + label + sign + aura.amount + '</p>';
+    }
 
     el.innerHTML =
       '<div class="ic-row">' +
         '<span class="ic-glyph" style="color:' + g.players[p.owner].color + '">' + t.glyph + '</span>' +
         '<span class="ic-who"><b>' + g.players[p.owner].name + ' · ' + t.name + '</b>' +
-        '<em>' + (isBase ? '基地' : ('血量 ' + p.hp + ' · 攻击 ' + p.atk + ' · 射程 ' + p.range)) + '</em></span>' +
+        '<em>' + stat + '</em></span>' +
       '</div>' +
       '<p class="ic-desc">' + (t.desc || '') + '</p>' +
-      (canSwap
-        ? '<button type="button" class="ic-swap" data-swap="' + p.key + '">⇄ 用「' +
-          (app.selected === '__slave' ? '奴隶' : sel.name) + '」替换它</button>'
+      auraLine +
+      (armed
+        ? '<div class="ic-armed">已选中这个棋子 · 点下面任意兵种卡即可替换</div>' +
+          '<button type="button" class="ic-cancel" data-cancel="1">取消选中</button>'
         : '');
+    el.classList.toggle('armed', armed);
     el.classList.add('show');
   }
 
@@ -528,11 +549,25 @@
       return;
     }
 
-    if (g.pieceAt(cell.key)) {
-      app.inspect = (app.inspect && app.inspect.key === cell.key) ? null : cell;
+    var clicked = g.pieceAt(cell.key);
+    if (clicked) {
+      // 自己的棋子：点一下 = 选中「待替换」，再点一下取消
+      var mine = clicked.owner === g.active && clicked.kind !== 'base' && isMyTurn();
+      if (mine) {
+        app.pendingReplace = (app.pendingReplace === cell.key) ? null : cell.key;
+        app.inspect = cell;
+        if (app.pendingReplace) toast('已选中，点下面的兵种卡替换它');
+      } else {
+        app.pendingReplace = null;
+        app.inspect = (app.inspect && app.inspect.key === cell.key) ? null : cell;
+      }
       updateInspectCard();
+      refresh();
       return;
     }
+
+    // 点空格：取消待替换，回到正常放置
+    if (app.pendingReplace) { app.pendingReplace = null; }
     if (!isMyTurn()) { toast('还没轮到你'); return; }
 
     // 免费奴隶
@@ -580,14 +615,19 @@
     refresh();
   }
 
-  // 用当前选中的兵种替换掉自己某个棋子
-  function replaceOwn(cellKey) {
+  // 用指定兵种替换掉「已选中」的那个己方棋子
+  function replaceOwn(typeId) {
     var g = app.game;
     if (!g || g.over) return;
     if (!isMyTurn()) { toast('还没轮到你'); return; }
+    var cellKey = app.pendingReplace;
+    if (!cellKey) return;
 
-    var isSlave = app.selected === '__slave';
-    var t = isSlave ? (typesOf().slave || ENGINE.TYPES.slave) : typesOf()[app.selected];
+    if (typeId && typeId !== '__slave') app.selected = typeId;
+
+    var pick = typeId || app.selected;
+    var isSlave = pick === '__slave';
+    var t = isSlave ? (typesOf().slave || ENGINE.TYPES.slave) : typesOf()[pick];
     if (!t) { toast('先在下面选一个兵种'); return; }
     if (isSlave && (!g.freeSlavesLeft || g.freeSlavesLeft(g.active) <= 0)) {
       toast('本回合没有可召唤的奴隶了');
@@ -612,14 +652,17 @@
 
     if (app.mode === 'online') {
       if (isSlave) Net.act({ kind: 'slave', cell: cellKey });
-      else Net.act({ kind: 'place', type: app.selected, cell: cellKey });
+      else Net.act({ kind: 'place', type: pick, cell: cellKey });
+      app.pendingReplace = null;
+      refresh();
       return;
     }
 
     try {
       if (isSlave) g.placeSlave(g.active, cellKey);
-      else g.place(g.active, app.selected, cellKey);
+      else g.place(g.active, pick, cellKey);
     } catch (e) { toast(e.message); return; }
+    app.pendingReplace = null;
 
     var old = (g.history[g.history.length - 1] || {}).replacedKind;
     var oldName = old && typesOf()[old] ? typesOf()[old].name : '';
@@ -1428,7 +1471,14 @@
       var card = e.target.closest ? e.target.closest('.card') : null;
       if (!card) return;
       var type = card.getAttribute('data-type');
-      if (!type) return;
+      if (!type || type === '__preview') return;
+
+      // 已经选中了一个要替换的棋子 → 这张卡就是「换成它」
+      if (app.pendingReplace) {
+        replaceOwn(type);
+        return;
+      }
+
       app.selected = type;
       app.inspect = null;
       renderShop();
@@ -1468,9 +1518,14 @@
 
     if (els.inspectCard) {
       els.inspectCard.addEventListener('click', function (e) {
+        var cancel = e.target.closest ? e.target.closest('[data-cancel]') : null;
+        if (cancel) {
+          app.pendingReplace = null;
+          refresh();
+          return;
+        }
         var btn = e.target.closest ? e.target.closest('[data-swap]') : null;
-        if (!btn) return;
-        replaceOwn(btn.getAttribute('data-swap'));
+        if (btn) replaceOwn(btn.getAttribute('data-swap'));
       });
     }
 
@@ -1487,6 +1542,12 @@
     document.addEventListener('keydown', function (e) {
       if (e.target && /input|textarea|select/i.test(e.target.tagName)) return;
       var key = e.key;
+      if (key === 'Escape' && app.pendingReplace) {
+        app.pendingReplace = null;
+        refresh();
+        toast('已取消替换');
+        return;
+      }
       if (key === 'Escape' && app.pending) {
         app.pending = null;
         refresh();
@@ -1500,8 +1561,14 @@
       if (app.mode === 'ai' && !isMyTurn()) return;
       if (app.mode === 'online' && !isMyTurn()) return;
       var hot = { '1': 'infantry', '2': 'tank', '3': 'artillery', '4': 'command', '5': 'sniper', '6': 'slaver' };
-      if (hot[key]) { app.selected = hot[key]; app.pending = null; renderShop(); refresh(); }
-      else if (key === 'f' || key === 'F') { app.selected = '__slave'; app.pending = null; renderShop(); refresh(); }
+      var pickId = hot[key] || ((key === 'f' || key === 'F') ? '__slave' : null);
+      if (pickId) {
+        if (app.pendingReplace) { replaceOwn(pickId); return; }
+        app.selected = pickId;
+        app.pending = null;
+        renderShop();
+        refresh();
+      }
       else if (key === 'r' || key === 'R') { doResolve(); }
       else if (key === ' ' || key === 'Enter') {
         if (els.btnEnd.disabled) return;

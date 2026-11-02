@@ -564,6 +564,81 @@ console.log('== 11. 棋子替换 ==');
   g.place(1, 'sniper', tankCell, { dir: 2 });
   eq(g.pieces.get(g.occupant.get(tankCell)).kind, 'sniper', '替换：可以换成狙击兵');
 }
+console.log('== 12. 可配置光环 ==');
+{
+  const mk = (types) => new ENGINE.Game({
+    side: 5, density: 0, seed: 61,
+    rules: { baseHp: 4, energyPerTurn: 20, firstPlayer: 1, firstTurnEnergy: [20, 20] },
+    types: types || {}
+  });
+
+  // 内置指挥所仍是 1 格 +1 攻
+  {
+    const g = mk();
+    clearBoard(g);
+    force(g, 1, 'infantry', 0, 2);
+    force(g, 1, 'command', 0, 3);
+    const inf = [...g.pieces.values()].find((p) => p.owner === 1 && p.kind === 'infantry');
+    eq(g.atkOf(inf), 2, '光环：指挥所相邻 +1 攻');
+    const au = g.auraOf([...g.pieces.values()].find((p) => p.kind === 'command'));
+    eq(au.radius, 1, '光环：指挥所半径 1');
+    eq(au.effect, 'atk', '光环：指挥所效果是加攻');
+  }
+
+  // 加血光环 + 半径 2
+  {
+    const g = mk({ guard: { name: '卫兵', hp: 2, atk: 0, range: 0, cost: 1, rangeMode: 'none',
+                            aura: { radius: 2, effect: 'hp', amount: 2 } } });
+    clearBoard(g);
+    const inf = force(g, 1, 'infantry', 0, 2);
+    force(g, 1, 'guard', 1, 3);          // 距离 2
+    eq(g.hpOf(inf), 5, '光环：半径 2 的加血 +2 → 5 血');
+    const far = force(g, 1, 'infantry', -2, 3);
+    eq(g.hpOf(far), 3, '光环：超出半径不吃光环');
+  }
+
+  // 敌方减攻 / 减血
+  {
+    const g = mk({
+      weak: { name: '虚弱', hp: 2, atk: 0, range: 0, cost: 1, rangeMode: 'none',
+              aura: { radius: 2, effect: 'enemyAtk', amount: 1 } },
+      frail: { name: '易碎', hp: 2, atk: 0, range: 0, cost: 1, rangeMode: 'none',
+               aura: { radius: 2, effect: 'enemyHp', amount: 2 } }
+    });
+    clearBoard(g);
+    const foe = force(g, 0, 'infantry', 0, 0);
+    eq(g.atkOf(foe), 1, '光环：敌方基础攻击 1');
+    force(g, 1, 'weak', 0, 1);
+    eq(g.atkOf(foe), 0, '光环：敌方减攻让攻击归零');
+    force(g, 1, 'frail', 1, 0);
+    eq(g.hpOf(foe), 1, '光环：敌方减血 -2 → 1 血');
+    g.resolve();
+    ok(!g.pieces.has(foe.id), '光环：被减血的敌人 1 点伤害就死');
+  }
+
+  // 减攻不会出现负伤害
+  {
+    const g = mk({ weak2: { name: '虚弱2', hp: 2, atk: 0, range: 0, cost: 1, rangeMode: 'none',
+                            aura: { radius: 2, effect: 'enemyAtk', amount: 3 } } });
+    clearBoard(g);
+    const foe = force(g, 0, 'infantry', 0, 0);
+    force(g, 1, 'weak2', 0, 1);
+    eq(g.atkOf(foe), 0, '光环：减攻到 0 后不再变负');
+    ok(g.attackCells(foe).size > 0, '光环：攻击力 0 时依然不会误伤（范围还在但伤害为 0）');
+  }
+
+  // 序列化保留光环结构
+  {
+    const g = mk({ modx: { name: '自定义', hp: 3, atk: 1, range: 1, cost: 2,
+                           aura: { radius: 3, effect: 'enemyHp', amount: 4 } } });
+    const back = ENGINE.Game.fromJSON(g.toJSON());
+    const t = back.types.modx;
+    ok(!!t, '光环：自定义兵种序列化后还在');
+    eq(t.aura.radius, 3, '光环：序列化保留半径');
+    eq(t.aura.effect, 'enemyHp', '光环：序列化保留效果类型');
+    eq(t.aura.amount, 4, '光环：序列化保留数值');
+  }
+}
 console.log('\n通过 ' + pass + ' 项，失败 ' + fail + ' 项');
 process.exit(fail ? 1 : 0);
 

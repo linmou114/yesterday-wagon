@@ -208,9 +208,19 @@ function cleanMod(raw) {
     range: modNum(raw.range, 0, 6, 1),
     cost: modNum(raw.cost, 0, 30, 2),
     rangeMode: mode,
-    aura: !!raw.aura,
+    aura: null,
     desc: String(raw.desc || '').slice(0, 120)
   };
+  if (raw.aura === true) {
+    out.aura = { radius: 1, effect: 'atk', amount: 1 };
+  } else if (raw.aura && typeof raw.aura === 'object') {
+    const effs = ['atk', 'hp', 'enemyAtk', 'enemyHp'];
+    out.aura = {
+      radius: modNum(raw.aura.radius, 1, 3, 1),
+      effect: effs.indexOf(raw.aura.effect) >= 0 ? raw.aura.effect : 'atk',
+      amount: modNum(raw.aura.amount, 1, 5, 1)
+    };
+  }
   if (out.rangeMode === 'none') out.range = 0;
   if (out.atk <= 0) out.range = 0;
   return out;
