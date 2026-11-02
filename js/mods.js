@@ -98,6 +98,11 @@
     var all = myMods();
     delete all[id];
     writeJson(STORE_KEY, all);
+
+    var cache = readJson(REMOTE_KEY, {});
+    delete cache[id];
+    writeJson(REMOTE_KEY, cache);
+
     var pick = picks();
     delete pick[id];
     writeJson(PICK_KEY, pick);
@@ -116,6 +121,12 @@
 
   // 服务器上拉到的定义缓存
   function remoteCache() { return readJson(REMOTE_KEY, {}); }
+
+  // 我是不是这个棋子的作者（有 secret 才算）
+  function isMine(id) {
+    var mine = myMods()[id];
+    return !!(mine && mine.secret);
+  }
 
   function cacheRemote(list) {
     var cache = {};
@@ -254,6 +265,7 @@
     myMods: myMods,
     saveMine: saveMine,
     removeMine: removeMine,
+    isMine: isMine,
     picks: picks,
     setPick: setPick,
     allDefs: allDefs,

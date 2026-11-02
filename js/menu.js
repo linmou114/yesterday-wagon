@@ -591,20 +591,35 @@
       var del = e.target.closest ? e.target.closest('[data-del]') : null;
       if (del) {
         e.preventDefault();
+        e.stopPropagation();
         var id = del.getAttribute('data-del');
         var mine = MODS.myMods()[id];
         if (!mine) return;
-        var doDelete = function () {
+
+        var row = del.closest ? del.closest('.mod-item') : null;
+        var title = row ? (row.querySelector('.mi-name').textContent || '') : '';
+        if (!window.confirm('删除自建棋子「' + title + '」？\n删掉之后它会从服务器上一并消失，别人也选不到了。')) return;
+
+        var doDelete = function (msg) {
           MODS.removeMine(id);
           renderModList();
-          flash('已删除（本地）');
+          refreshQuota();
+          flash(msg);
         };
-        if (mine.secret && mine.id && /^mod_/.test(mine.id)) {
-          MODS.removeRemote(mine.id, mine.secret)
-            .then(function () { doDelete(); flash('已从服务器删除'); })
-            .catch(function (err) { doDelete(); flash('本地已删除，服务器删除失败：' + err.message); });
+
+        if (mine.secret && /^mod_/.test(id)) {
+          del.disabled = true;
+          MODS.removeRemote(id, mine.secret)
+            .then(function () {
+              doDelete('已从服务器删除');
+              refreshRemoteMods();
+            })
+            .catch(function (err) {
+              del.disabled = false;
+              flash('删除失败：' + err.message);
+            });
         } else {
-          doDelete();
+          doDelete('已删除（这只存在本地）');
         }
         return;
       }
