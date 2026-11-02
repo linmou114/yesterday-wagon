@@ -244,6 +244,34 @@ function send(ws, msg) { ws.send(JSON.stringify(msg)); }
       });
       ok(bad.status === 400, '空名字的兵种被拒绝');
     }
+    console.log('== 上传额度 ==');
+    {
+      const client = 'nt' + Date.now().toString(36);
+      const mk = (i, key) => JSON.stringify({
+        mod: { name: '测试' + i, glyph: '测', hp: 3, atk: 1, range: 1, cost: 1, rangeMode: 'circle' },
+        client, key: key || ''
+      });
+      const made = [];
+      for (let i = 1; i <= 4; i++) {
+        const r = await fetch(BASE + '/api/mods', { method: 'POST', headers: { 'content-type': 'application/json' }, body: mk(i) });
+        const j = await r.json();
+        if (r.ok) made.push(j.mod.id + ':' + j.secret);
+      }
+      ok(made.length === 4, '不填秘钥可以上传 4 个');
+      const fifth = await fetch(BASE + '/api/mods', { method: 'POST', headers: { 'content-type': 'application/json' }, body: mk(5) });
+      ok(fifth.status === 429, '第 5 个被拒绝（429）');
+      const q = await (await fetch(BASE + '/api/mods/quota?client=' + client)).json();
+      ok(q.used === 4 && q.limit === 4, '额度接口返回 4/4');
+      const withKey = await fetch(BASE + '/api/mods', { method: 'POST', headers: { 'content-type': 'application/json' }, body: mk(5, 'mrfz') });
+      ok(withKey.status === 200, '填秘钥后可以继续上传');
+      // 清理
+      for (const pair of made) {
+        const idx = pair.indexOf(':');
+        await fetch(BASE + '/api/mods/' + pair.slice(0, idx), {
+          method: 'DELETE', headers: { 'x-mod-secret': pair.slice(idx + 1) }
+        });
+      }
+    }
     console.log('== 房间生命周期 ==');
     const a4 = await connect();
     send(a4, { t: 'create', settings: { side: 4, density: 0, rules: { firstPlayer: 1, energyPerTurn: 3, baseHp: 4 }, types: {} } });

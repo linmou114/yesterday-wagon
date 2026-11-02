@@ -424,7 +424,24 @@
       b.classList.toggle('on', b.getAttribute('data-m') === d.rangeMode);
     });
     paintEditor();
+    refreshQuota();
     show('ovModEditor');
+  }
+
+  // 上传额度：不填秘钥最多 4 个
+  function refreshQuota() {
+    var el = $('modQuota');
+    if (!el || !MODS) return;
+    el.textContent = '正在查询上传额度…';
+    el.className = 'mod-quota';
+    MODS.quota().then(function (q) {
+      if (q.used >= q.limit) {
+        el.textContent = '已上传 ' + q.used + ' / ' + q.limit + ' 个（免费额度用完，填秘钥可继续）';
+        el.className = 'mod-quota full';
+      } else {
+        el.textContent = '已上传 ' + q.used + ' / ' + q.limit + ' 个（不填秘钥最多 ' + q.limit + ' 个）';
+      }
+    });
   }
 
   function saveEditor(upload) {
@@ -447,7 +464,9 @@
       return;
     }
 
-    MODS.publish(def).then(function (res) {
+    var keyEl = $('modKey');
+    var key = keyEl ? String(keyEl.value || '').trim() : '';
+    MODS.publish(def, key).then(function (res) {
       var rid = res.mod.id;
       MODS.removeMine(id);
       MODS.saveMine(res.mod, res.secret);
@@ -457,8 +476,10 @@
       renderModList();
       hide('ovModEditor');
       flash('已上传到服务器：' + res.mod.name);
+      refreshQuota();
     }).catch(function (err) {
       flash('上传失败：' + err.message + '（已保存在本地）');
+      refreshQuota();
     });
   }
   /* ---------------- 弹层 ---------------- */

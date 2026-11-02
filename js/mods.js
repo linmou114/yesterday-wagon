@@ -175,10 +175,34 @@
       .catch(function () { return []; });
   }
 
-  function publish(def) {
+  // 本机身份（用于统计免费额度），生成一次后一直复用
+  function clientId() {
+    var KEY = 'yesterday-bus.client.v1';
+    var v = null;
+    try { v = localStorage.getItem(KEY); } catch (e) {}
+    if (!v) {
+      v = 'u' + Date.now().toString(36) + Math.random().toString(36).slice(2, 10);
+      try { localStorage.setItem(KEY, v); } catch (e) {}
+    }
+    return v;
+  }
+
+  function quota() {
+    var url = apiUrl('/api/mods/quota?client=' + encodeURIComponent(clientId()));
+    if (!url) return Promise.resolve({ used: 0, limit: 4 });
+    return fetch(url, { cache: 'no-store' })
+      .then(function (r) { return r.ok ? r.json() : { used: 0, limit: 4 }; })
+      .catch(function () { return { used: 0, limit: 4 }; });
+  }
+
+  function publish(def, key) {
     var url = apiUrl('/api/mods');
     if (!url) return Promise.reject(new Error('这个页面不是从服务器打开的，无法上传'));
-    var body = JSON.stringify({ mod: normalize(def) });
+    var body = JSON.stringify({
+      mod: normalize(def),
+      client: clientId(),
+      key: String(key || '')
+    });
     return fetch(url, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
@@ -238,6 +262,8 @@
     enabledDefs: enabledDefs,
     enabledIds: enabledIds,
     listRemote: listRemote,
+    clientId: clientId,
+    quota: quota,
     publish: publish,
     removeRemote: removeRemote
   };

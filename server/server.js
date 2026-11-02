@@ -73,6 +73,7 @@ const server = http.createServer((req, res) => {
       .map((m) => {
         const pub = Object.assign({}, m);
         delete pub.secret;          // 只有作者自己知道 secret
+        delete pub.owner;           // 不上传者身份
         return pub;
       });
     res.writeHead(200, {
@@ -81,6 +82,20 @@ const server = http.createServer((req, res) => {
       'access-control-allow-origin': '*'
     });
     return res.end(JSON.stringify({ mods: list }));
+  }
+
+  if (pathname === '/api/mods/quota' && req.method === 'GET') {
+    const qs = new URL(req.url, 'http://localhost').searchParams;
+    const owner = modOwner(req, { client: qs.get('client') || '' });
+    res.writeHead(200, {
+      'content-type': 'application/json; charset=utf-8',
+      'cache-control': 'no-store',
+      'access-control-allow-origin': '*'
+    });
+    return res.end(JSON.stringify({
+      used: modCountBy(owner),
+      limit: MOD_FREE_LIMIT
+    }));
   }
 
   if (pathname === '/api/mods' && req.method === 'POST') {
@@ -106,13 +121,29 @@ const server = http.createServer((req, res) => {
         res.writeHead(409, { 'content-type': 'application/json; charset=utf-8' });
         return res.end(JSON.stringify({ error: '自建兵种数量已达上限 ' + MOD_MAX }));
       }
+      const owner = modOwner(req, data);
+      const keyOk = data && String(data.key || '').trim() === MOD_KEY;
+      const used = modCountBy(owner);
+      if (!keyOk && used >= MOD_FREE_LIMIT) {
+        res.writeHead(429, { 'content-type': 'application/json; charset=utf-8' });
+        return res.end(JSON.stringify({
+          error: '免费额度已用完：不填秘钥最多只能上传 ' + MOD_FREE_LIMIT + ' 个棋子（已上传 ' + used + ' 个）',
+          used,
+          limit: MOD_FREE_LIMIT
+        }));
+      }
+
       const id = 'mod_' + crypto.randomBytes(5).toString('hex');
       const secret = crypto.randomBytes(12).toString('hex');
-      const mod = Object.assign({ id, secret, at: Date.now(), author: String(data.author || '').slice(0, 16) }, clean);
+      const mod = Object.assign({
+        id, secret, owner, at: Date.now(),
+        author: String(data.author || '').slice(0, 16)
+      }, clean);
       modStore.set(id, mod);
       saveMods();
       const pub = Object.assign({}, mod);
       delete pub.secret;
+      delete pub.owner;
       res.writeHead(200, { 'content-type': 'application/json; charset=utf-8' });
       return res.end(JSON.stringify({ mod: pub, secret }));
     });
@@ -161,6 +192,8 @@ const rooms = new Map();          // code -> room
 
 const MOD_FILE = path.join(__dirname, '..', 'data', 'mods.json');
 const MOD_MAX = 200;
+const MOD_FREE_LIMIT = 4;          // 不填秘钥时每个用户最多上传几个
+const MOD_KEY = 'mrfz';            // 填了这个秘钥就不限数量
 
 const modStore = new Map();
 
@@ -186,6 +219,20 @@ function saveMods() {
       console.error('保存自建兵种失败:', e.message);
     }
   }, 300);
+}
+
+// 请求方的身份：优先用客户端自己生成的 id，没有就退化成 IP
+function modOwner(req, body) {
+  const c = body && typeof body.client === 'string' ? body.client.trim() : '';
+  if (c && /^[a-z0-9_-]{6,40}$/i.test(c)) return 'c:' + c;
+  const ip = (req.socket && req.socket.remoteAddress) || 'unknown';
+  return 'i:' + ip;
+}
+
+function modCountBy(owner) {
+  let n = 0;
+  modStore.forEach((m) => { if (m && m.owner === owner) n += 1; });
+  return n;
 }
 
 function modNum(v, min, max, fallback) {
