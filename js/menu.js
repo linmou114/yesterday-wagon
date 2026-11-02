@@ -306,16 +306,15 @@
   }
 
   function allAvailableMods() {
-    // 本地保存的 + 服务器上的，按 id 合并（本地优先）
     var mine = MODS.myMods();
-    var map = {};
-    remoteMods.forEach(function (m) { if (m && m.id) map[m.id] = Object.assign({}, m, { mine: false }); });
-    Object.keys(mine).forEach(function (id) {
-      map[id] = Object.assign({}, mine[id], { id: id, mine: true });
-    });
-    return Object.keys(map).map(function (id) {
-      var m = map[id];
-      return Object.assign(MODS.normalize(m), { id: id, mine: !!m.mine, secret: m.secret, remote: !!m.remote });
+    var all = MODS.allDefs();
+    return Object.keys(all).map(function (id) {
+      var d = all[id];
+      return Object.assign({}, d, {
+        id: id,
+        mine: !!mine[id],
+        secret: mine[id] ? mine[id].secret : null
+      });
     }).sort(function (a, b) {
       if (a.mine !== b.mine) return a.mine ? -1 : 1;
       return (a.name || '').localeCompare(b.name || '');
@@ -352,6 +351,7 @@
     if (!MODS) return;
     return MODS.listRemote().then(function (list) {
       remoteMods = (list || []).map(function (m) { return Object.assign({}, m, { remote: true }); });
+      MODS.cacheRemote(remoteMods);      // 缓存下来，对局页才能用
       renderModList();
     });
   }
@@ -587,11 +587,14 @@
         }
         return;
       }
-      var box = e.target;
-      if (box && box.getAttribute && box.getAttribute('data-mod')) {
-        MODS.setPick(box.getAttribute('data-mod'), box.checked);
-        renderModList();
-      }
+      var row = e.target.closest ? e.target.closest('.mod-item') : null;
+      if (!row) return;
+      var input = row.querySelector('input[data-mod]');
+      if (!input) return;
+      // 点复选框本身时浏览器已经切换过；点这一行其它地方就手动切换
+      if (e.target !== input) input.checked = !input.checked;
+      MODS.setPick(input.getAttribute('data-mod'), input.checked);
+      renderModList();
     });
 
     $('btnSetDone').addEventListener('click', function () {

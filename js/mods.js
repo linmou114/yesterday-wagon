@@ -12,6 +12,7 @@
 
   var STORE_KEY = 'yesterday-bus.mods.v1';   // 我发布/收藏过的定义 + secret
   var PICK_KEY = 'yesterday-bus.modpick.v1'; // 启用了哪些
+  var REMOTE_KEY = 'yesterday-bus.modremote.v1'; // 从服务器拉到的定义缓存（不含 secret）
 
   var MAX_NAME = 10;
   var MAX_DESC = 120;
@@ -113,13 +114,42 @@
     writeJson(PICK_KEY, p);
   }
 
-  // 当前启用的定义（本地 + 服务器缓存）
-  function enabledDefs() {
+  // 服务器上拉到的定义缓存
+  function remoteCache() { return readJson(REMOTE_KEY, {}); }
+
+  function cacheRemote(list) {
+    var cache = {};
+    (list || []).forEach(function (m) {
+      if (!m || !m.id) return;
+      var d = normalize(m);
+      d.id = String(m.id);
+      d.remote = true;
+      cache[d.id] = d;
+    });
+    writeJson(REMOTE_KEY, cache);
+    return cache;
+  }
+
+  // 本地 + 缓存的全部可用定义，合并成一个 id -> def
+  function allDefs() {
+    var out = {};
+    var rc = remoteCache();
+    Object.keys(rc).forEach(function (id) { out[id] = normalize(Object.assign({}, rc[id], { id: id })); });
     var mine = myMods();
+    Object.keys(mine).forEach(function (id) {
+      out[id] = normalize(Object.assign({}, mine[id], { id: id }));
+      out[id].mine = true;
+    });
+    return out;
+  }
+
+  // 当前启用的定义（本地 + 服务器缓存都能用）
+  function enabledDefs() {
+    var all = allDefs();
     var p = picks();
     var out = [];
     Object.keys(p).forEach(function (id) {
-      if (mine[id]) out.push(normalize(Object.assign({}, mine[id], { id: id })));
+      if (all[id]) out.push(Object.assign({}, all[id], { id: id }));
     });
     return out.slice(0, MAX_MODS);
   }
@@ -202,6 +232,9 @@
     removeMine: removeMine,
     picks: picks,
     setPick: setPick,
+    allDefs: allDefs,
+    remoteCache: remoteCache,
+    cacheRemote: cacheRemote,
     enabledDefs: enabledDefs,
     enabledIds: enabledIds,
     listRemote: listRemote,
