@@ -161,5 +161,69 @@ console.log('== 5. 光环 / 新规则感知 ==');
   const mv9 = AI.chooseMove(g9);
   ok(mv9 && typeof mv9.cell === 'string' && typeof mv9.score === 'number', 'AI 返回可用的选点结果');
 }
+console.log('== 6. 吃子估值 ==');
+{
+  const mk = () => new ENGINE.Game({
+    side: 5, density: 0, seed: 44,
+    rules: { baseHp: 4, energyPerTurn: 9, firstPlayer: 1, firstTurnEnergy: [9, 9] }
+  });
+
+  // 能吃到残血敌人 → 评分更高
+  const a1 = mk();
+  a1.spawn(1, 'tank', '0,3');
+  const e1 = a1.spawn(0, 'infantry', '1,3');
+  e1.hp = 3;
+  const noKill = AI.evaluate(a1, 1);
+
+  const a2 = mk();
+  a2.spawn(1, 'tank', '0,3');
+  const e2 = a2.spawn(0, 'infantry', '1,3');
+  e2.hp = 1;
+  const canKill = AI.evaluate(a2, 1);
+  ok(canKill > noKill, '能吃到对方棋子时评分更高（' + noKill.toFixed(1) + ' → ' + canKill.toFixed(1) + '）');
+
+  // 吃掉的棋子越贵，收益越大（用「吃掉前 → 吃掉后」的落差衡量）
+  function killGain(kind, hp) {
+    const before = mk();
+    before.spawn(1, 'tank', '0,3');
+    const foe = before.spawn(0, kind, '1,3');
+    foe.hp = hp;
+    const b = AI.evaluate(before, 1);
+    foe.hp = 1;                      // 变成一刀能杀
+    const a = AI.evaluate(before, 1);
+    return a - b;
+  }
+  const gainTank = killGain('tank', 4);
+  const gainSlave = killGain('slave', 2);
+  ok(gainTank > gainSlave, '吃掉坦克的收益大于吃掉奴隶（' + gainSlave.toFixed(1) + ' vs ' + gainTank.toFixed(1) + '）');
+
+  // 自己的棋子快被吃 → 评分下降
+  const a5 = mk();
+  const own5 = a5.spawn(1, 'tank', '0,3');
+  own5.hp = 1;
+  a5.spawn(0, 'infantry', '1,3');
+  const danger = AI.evaluate(a5, 1);
+
+  const a6 = mk();
+  a6.spawn(1, 'tank', '0,3');
+  a6.spawn(0, 'infantry', '1,3');
+  const safe = AI.evaluate(a6, 1);
+  ok(danger < safe, '自己有被吃风险时评分更低（' + safe.toFixed(1) + ' → ' + danger.toFixed(1) + '）');
+
+  // 有击杀机会时，AI 会选择结算
+  const a7 = mk();
+  a7.spawn(1, 'artillery', '0,3');
+  const e7 = a7.spawn(0, 'infantry', '0,1');
+  e7.hp = 1;
+  ok(AI.shouldResolve(a7) === true, '有吃子机会时 AI 愿意结算');
+
+  // 对手大本营快爆 → 直接当成赢
+  const a8 = mk();
+  const fb = a8.baseOf(0);
+  fb.hp = 1;
+  a8.spawn(1, 'tank', '0,-3');       // 贴着敌方大本营，1 点伤害就能打爆
+  const huge = AI.evaluate(a8, 1);
+  ok(huge > 90000, '能一击打爆对手基地时评分爆表（' + Math.round(huge) + '）');
+}
 console.log(`\n通过 ${pass} 项，失败 ${fail} 项`);
 process.exit(fail ? 1 : 0);

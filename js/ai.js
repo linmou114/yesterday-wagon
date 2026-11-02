@@ -57,16 +57,31 @@
   }
 
   // 从 me 的视角评估局面（越大越有利）
+  //   棋子价值（含光环、残血贬值）
+  //   + 吃子估值：结算时会死掉的棋子按「已死」处理，并按击杀价值额外加分
+  //   + 推进度 / 施压度
   function evaluate(g, me) {
     if (g.over) {
       if (g.winner === me) return WIN;
       if (g.winner === -1) return DRAW;
       return LOSS;
     }
+
     var dmg = g.damageMap();
     var myBase = g.baseOf(me);
     var foeBase = g.baseOf(1 - me);
+    var baseHp = (g.rules && g.rules.baseHp) || 4;
     var score = 0;
+
+    // 下回合就能打爆对方大本营 → 直接当作赢；自己家要爆 → 当作输
+    if (foeBase) {
+      var fd = dmg.get(foeBase.id) || 0;
+      if (fd >= Math.max(1, foeBase.hp)) return WIN - 100;
+    }
+    if (myBase) {
+      var md = dmg.get(myBase.id) || 0;
+      if (md >= Math.max(1, myBase.hp)) return LOSS + 100;
+    }
 
     // 施压度：每个棋子能打到几个敌人（鼓励贴身接触，别一直龟缩）
     var all = [];
@@ -83,22 +98,38 @@
     }
 
     g.pieces.forEach(function (p) {
-      var v = pieceValue(g, p);
       var mine = p.owner === me;
-      var hpNow = (g.hpOf && p.kind !== 'base') ? g.hpOf(p) : p.hp;
 
-      // 已经挨到致死线的棋子，价值大打折扣（下轮就要没了）
-      var d = dmg.get(p.id) || 0;
-      if (d >= hpNow) v *= 0.35;
-      else if (d > 0) v *= 1 - 0.12 * Math.min(d, hpNow);
-      // 残血棋子本身就更廉价（血越少越像消耗品）
-      if (p.kind !== 'base') {
-        v *= 0.72 + 0.28 * (hpNow / Math.max(1, p.maxHp || p.hp || 1));
+      // 大本营单独算（血就是命，不参与吃子逻辑）
+      if (p.kind === 'base') {
+        var bv = 15 * p.hp;
+        var bd = dmg.get(p.id) || 0;
+        if (bd > 0) bv -= bd * 4;        // 掉血很危险
+        score += mine ? bv : -bv;
+        return;
       }
+
+      var hpNow = (g.hpOf) ? g.hpOf(p) : p.hp;
+      var maxHp = Math.max(1, p.maxHp || p.hp || 1);
+      var d = dmg.get(p.id) || 0;
+      var dead = d > 0 && d >= hpNow;
+
+      if (dead) {
+        // 这回合就会死：直接按「已经没了」算，吃子的收益就是对方少了这份价值
+        // （对手的棋子不再扣分 / 自己的棋子不再加分，等价于被吃掉）
+        return;
+      }
+
+      score += mine ? 0.9 : -0.9;      // 子力数量（多一个棋子总是好的）
+      var v = pieceValue(g, p);
+      // 残血棋子更廉价（血越少越像消耗品），同时也是对方「快吃到了」的信号
+      v *= 0.72 + 0.28 * (hpNow / maxHp);
+      // 挨了一刀但没死的，再扣一点（下回合更容易被吃）
+      if (d > 0) v *= 1 - 0.10 * Math.min(d, hpNow);
 
       // 推进：离「对方的基地」越近越有价值
       var target = mine ? foeBase : myBase;
-      if (target && p.kind !== 'base') {
+      if (target) {
         var dist = Hex.distance(Hex.parse(p.key), Hex.parse(target.key));
         v += Math.max(0, 7 - dist) * 0.55;
         v += (pressure.get(p.id) || 0) * 0.45;
@@ -108,7 +139,6 @@
 
     return score;
   }
-
   // 现在买得起哪些兵种
   function affordableTypes(g) {
     var types = g.typeList || ENGINE.TYPE_LIST;
@@ -195,14 +225,32 @@
     return best;
   }
 
-  // 现在结算到底划不划算
+  // 现在结算到底划不划算：吃子收益 + 局面变化
   function shouldResolve(g) {
     if (g.over) return false;
     var me = g.active;
     var before = evaluate(g, me);
     var sim = g.clone();
-    sim.resolve();
+    var res = sim.resolve();
+    if (sim.over) {
+      // 能直接把对方打崩（或自己崩）就立刻结算
+      if (sim.winner === me) return true;
+      if (sim.winner !== -1) return false;
+    }
     var after = evaluate(sim, me);
+
+    // 这一刀吃掉了什么：对方棋子 = 收益，自己的棋子 = 亏
+    var gain = 0;
+    var list = (res && res.removed) || [];
+    for (var i = 0; i < list.length; i++) {
+      var gone = list[i].piece;
+      if (!gone || gone.kind === 'base') continue;
+      var v = pieceValue(g, gone);
+      gain += (gone.owner === me) ? -v : v;
+    }
+
+    if (gain > 0.5) return true;                 // 换子赚了 / 白吃
+    if (gain < -0.5 && after < before + 2) return false;  // 白亏，别结算
     return after > before + 0.001;
   }
 
