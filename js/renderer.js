@@ -1,4 +1,4 @@
-/* =========================================================
+﻿/* =========================================================
  * renderer.js —— Canvas 绘制层（只画，不改规则状态）
  * ========================================================= */
 window.Renderer = (function () {
@@ -163,8 +163,8 @@ window.Renderer = (function () {
       }
     });
 
-    // 2. 合法落点（买不起时标红，而不是干脆不显示）
-    if (selected && !g.over) {
+    // 2. 合法落点（买不起时标红，而不是干脆不显示；选方向时不显示）
+    if (selected && !g.over && !ui.pending) {
       var canPay = !!ui.canAfford;
       var markColor = canPay ? activeColor : '#f87171';
       legal.forEach(function (k) {
@@ -248,8 +248,8 @@ window.Renderer = (function () {
     // 4.5 狙击兵待定方向：画 6 个方向箭头 + 当前方向的射线
     if (ui.pending) this.drawPendingDirection(ui.pending);
 
-    // 5. 放置预览
-    if (hover && selected && ui.canAfford && legal.has(hover.key) && !g.over) {
+    // 5. 放置预览（等狙击兵选方向时不要再投影一个棋子）
+    if (!ui.pending && hover && selected && ui.canAfford && legal.has(hover.key) && !g.over) {
       var hc = Hex.parse(hover.key);
       var hp = this.cellCenter(hc.q, hc.r);
       this.hexPath(hp.x, hp.y, s * 0.86);
