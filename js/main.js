@@ -60,6 +60,7 @@
         hover: app.hover,
         inspect: app.inspect,
         effects: app.effects,
+        pending: app.pending,
         canAfford: !!g && selectedAffordable()
       };
     });
@@ -140,6 +141,7 @@
   function selectedAffordable() {
     var g = app.game;
     if (!g || g.over) return false;
+    if (app.selected === '__slave') return (g.freeSlavesLeft ? g.freeSlavesLeft(g.active) : 0) > 0;
     var t = typesOf()[app.selected];
     return !!t && g.energy >= t.cost;
   }
@@ -192,6 +194,7 @@
     app.startedAt = Date.now();
     app.drawByAgreement = false;
     app.drawPending = false;
+    app.pending = null;
     hideDrawBar();
     try { window.sessionStorage.removeItem('yesterday-bus.resume.v1'); } catch (e) {}
 
@@ -254,16 +257,20 @@
         pips += '<i class="pip' + (k < energy ? ' on' : '') + '"></i>';
       }
 
-      // 兵种编成
-      var counts = { infantry: 0, tank: 0, artillery: 0 };
+      // 兵种编成（按兵种表动态生成，新兵种自动出现）
+      var counts = {};
+      ENGINE.ALL_TYPE_LIST.forEach(function (id) { counts[id] = 0; });
       g.pieces.forEach(function (p) {
         if (p.owner === i && counts[p.kind] != null) counts[p.kind] += 1;
       });
-      var comp = '<div class="comp">' +
-        '<span><i>步</i>' + counts.infantry + '</span>' +
-        '<span><i>坦</i>' + counts.tank + '</span>' +
-        '<span><i>炮</i>' + counts.artillery + '</span>' +
-        '</div>';
+      var comp = '<div class="comp">';
+      ENGINE.ALL_TYPE_LIST.forEach(function (id) {
+        var t = typesOf()[id] || ENGINE.TYPES[id];
+        var show = (id === 'slave') ? counts[id] > 0 : true;   // 没奴隶就不显示
+        if (!show) return;
+        comp += '<span title="' + t.name + '"><i>' + t.glyph + '</i>' + counts[id] + '</span>';
+      });
+      comp += '</div>';
 
       var stateText = g.over
         ? (g.winner === -1 ? '平局' : (g.winner === i ? '胜利' : '失败'))
@@ -292,18 +299,35 @@
     var g = app.game;
     var html = '';
     var only = (app.mode === 'tutorial' && app.tutTypes) ? app.tutTypes : null;
-    ENGINE.TYPE_LIST.forEach(function (id, idx) {
-      if (only && only.indexOf(id) < 0) return;
+    var list = ENGINE.TYPE_LIST.filter(function (id) { return !only || only.indexOf(id) >= 0; });
+    list.forEach(function (id, idx) {
       var t = typesOf()[id];
       var afford = g.energy >= t.cost && !g.over;
+      var rangeTxt = (t.rangeMode === 'line') ? ('直线 ' + t.range) : ('射 ' + t.range);
       html += '<button type="button" class="card' + (app.selected === id ? ' sel' : '') +
         (afford ? '' : ' poor') + '" data-type="' + id + '">' +
         '<span class="card-key">' + (idx + 1) + '</span>' +
         '<span class="card-name">' + t.name + '</span>' +
         '<span class="card-cost">' + t.cost + ' 费</span>' +
-        '<span class="card-line">血 ' + t.hp + ' · 攻 ' + t.atk + ' · 射 ' + t.range + '</span>' +
+        '<span class="card-line">血 ' + t.hp + ' · 攻 ' + t.atk + ' · ' + rangeTxt + '</span>' +
         '</button>';
     });
+
+    // 奴隶主的免费奴隶：只在本方还有额度时出现
+    var me = (app.mode === 'online') ? app.mySeat : g.active;
+    if (!g.over && typeof g.freeSlavesLeft === 'function') {
+      var quota = g.freeSlavesLeft(me);
+      if (quota > 0) {
+        var st = typesOf().slave || ENGINE.TYPES.slave;
+        html += '<button type="button" class="card free' +
+          (app.selected === '__slave' ? ' sel' : '') + '" data-type="__slave">' +
+          '<span class="card-key">F</span>' +
+          '<span class="card-name">' + st.name + ' ×' + quota + '</span>' +
+          '<span class="card-cost">免费</span>' +
+          '<span class="card-line">血 ' + st.hp + ' · 攻 ' + st.atk + ' · 射 ' + st.range + '</span>' +
+          '</button>';
+      }
+    }
     els.shop.innerHTML = html;
   }
 
@@ -421,9 +445,57 @@
 
   /* ---------------- 操作 ---------------- */
 
+  // 狙击兵默认朝向：指着最近的敌方大本营
+  function defaultDir(cellKey) {
+    var g = app.game;
+    var me = g.active;
+    var base = g.board.baseOf ? g.board.baseOf(1 - me) : null;
+    var target = base ? Hex.parse(base.key) : null;
+    var from = Hex.parse(cellKey);
+    var best = 0, bestD = Infinity;
+    for (var d = 0; d < 6; d++) {
+      var dir = Hex.DIRS[d];
+      var nq = from.q + dir.q, nr = from.r + dir.r;
+      if (!g.board.cells.has(Hex.key(nq, nr))) continue;
+      var dist = target ? Hex.distance({ q: nq, r: nr }, target) : d;
+      if (dist < bestD) { bestD = dist; best = d; }
+    }
+    return best;
+  }
+
+  function placePending() {
+    var g = app.game;
+    var pend = app.pending;
+    if (!g || !pend) return;
+    app.pending = null;
+
+    if (app.mode === 'online') {
+      Net.act({ kind: 'place', type: pend.type, cell: pend.cell, dir: pend.dir });
+      return;
+    }
+    try {
+      g.place(g.active, pend.type, pend.cell, { dir: pend.dir });
+    } catch (e) {
+      toast(e.message);
+      refresh();
+      return;
+    }
+    app.inspect = null;
+    addLog(g.players[g.active].name + ' 部署 ' + typesOf()[pend.type].name +
+      '（方向 ' + (pend.dir + 1) + '）', 'place');
+    refresh();
+  }
+
   function handleCellClick(cell) {
     var g = app.game;
     if (!g || g.over) return;
+
+    // 正在为狙击兵选方向：这一下是确认
+    if (app.pending) {
+      if (cell.key === app.pending.cell) { app.pending = null; refresh(); return; }
+      placePending();
+      return;
+    }
 
     if (g.pieceAt(cell.key)) {
       app.inspect = (app.inspect && app.inspect.key === cell.key) ? null : cell;
@@ -431,9 +503,38 @@
       return;
     }
     if (!isMyTurn()) { toast('还没轮到你'); return; }
+
+    // 免费奴隶
+    if (app.selected === '__slave') {
+      if (!g.freeSlavesLeft || g.freeSlavesLeft(g.active) <= 0) { toast('本回合没有可召唤的奴隶了'); return; }
+      if (app.mode === 'online') { Net.act({ kind: 'slave', cell: cell.key }); return; }
+      try {
+        g.placeSlave(g.active, cell.key);
+      } catch (e) { toast(e.message); return; }
+      app.inspect = null;
+      addLog(g.players[g.active].name + ' 召唤 奴隶', 'place');
+      refresh();
+      return;
+    }
+
     var t = typesOf()[app.selected];
     if (!t) return;
     if (g.energy < t.cost) { toast('费用不足，结束回合后会恢复到 ' + g.rules.energyPerTurn + ' 点'); return; }
+
+    // 狙击兵：先确认落点，再拖方向
+    if (t.rangeMode === 'line') {
+      var chk = g.canPlace(g.active, app.selected, cell.key, { dir: 0 });
+      if (!chk.ok) { toast(chk.msg); return; }
+      app.pending = {
+        cell: cell.key, type: app.selected,
+        dir: defaultDir(cell.key), len: t.range, owner: g.active
+      };
+      app.inspect = null;
+      toast('拖动或点击选择狙击方向，再点一下确认');
+      refresh();
+      return;
+    }
+
     var check = g.canPlace(g.active, app.selected, cell.key);
     if (!check.ok) { toast(check.msg); return; }
 
@@ -737,6 +838,7 @@
     app.startedAt = Date.now();
     app.drawByAgreement = false;
     app.drawPending = false;
+    app.pending = null;
     hideDrawBar();
     try { window.sessionStorage.removeItem('yesterday-bus.resume.v1'); } catch (e) {}
     app.mySeat = app.online.seat;
@@ -783,8 +885,14 @@
 
     if (ev.kind === 'place') {
       var tp = typesOf()[ev.type];
+      var extra = (ev.dir != null) ? ('（方向 ' + (ev.dir + 1) + '）') : '';
       addLog(g.players[ev.owner != null ? ev.owner : ev.active].name +
-        ' 部署 ' + (tp ? tp.name : '棋子'), 'place');
+        ' 部署 ' + (tp ? tp.name : '棋子') + extra, 'place');
+      return;
+    }
+
+    if (ev.kind === 'slave') {
+      addLog(g.players[ev.owner != null ? ev.owner : ev.active].name + ' 召唤 奴隶', 'place');
       return;
     }
 
@@ -1253,6 +1361,27 @@
     els.canvas.addEventListener('pointermove', function (e) {
       var cell = app.renderer.pickCell(e.clientX, e.clientY);
       var k = cell ? cell.key : null;
+
+      // 狙击选方向：按指针相对落点的方位取最近的 6 个方向之一
+      if (app.pending) {
+        var from = Hex.parse(app.pending.cell);
+        var c0 = app.renderer.cellCenter(from.q, from.r);
+        var box = els.canvas.getBoundingClientRect();
+        var px = e.clientX - box.left - c0.x;
+        var py = e.clientY - box.top - c0.y;
+        if (px * px + py * py > 4) {
+          var best = 0, bestD = -Infinity;
+          for (var d = 0; d < 6; d++) {
+            var dir = Hex.DIRS[d];
+            var vx = 1.5 * dir.q;
+            var vy = Math.sqrt(3) * (dir.r + dir.q / 2);
+            var dot = (px * vx + py * vy) / Math.sqrt(vx * vx + vy * vy);
+            if (dot > bestD) { bestD = dot; best = d; }
+          }
+          if (best !== app.pending.dir) { app.pending.dir = best; }
+        }
+      }
+
       if ((app.hover && app.hover.key) === k) return;
       app.hover = cell;
       updateInspectCard();
@@ -1271,15 +1400,21 @@
     document.addEventListener('keydown', function (e) {
       if (e.target && /input|textarea|select/i.test(e.target.tagName)) return;
       var key = e.key;
+      if (key === 'Escape' && app.pending) {
+        app.pending = null;
+        refresh();
+        toast('已取消放置');
+        return;
+      }
       if (overlayOpen()) {
         if (key === 'Escape') { hideOverlay('ovRules'); hideOverlay('ovSettings'); hideOverlay('ovOnline'); }
         return;
       }
       if (app.mode === 'ai' && !isMyTurn()) return;
       if (app.mode === 'online' && !isMyTurn()) return;
-      if (key === '1') { app.selected = 'infantry'; renderShop(); }
-      else if (key === '2') { app.selected = 'tank'; renderShop(); }
-      else if (key === '3') { app.selected = 'artillery'; renderShop(); }
+      var hot = { '1': 'infantry', '2': 'tank', '3': 'artillery', '4': 'command', '5': 'sniper', '6': 'slaver' };
+      if (hot[key]) { app.selected = hot[key]; app.pending = null; renderShop(); refresh(); }
+      else if (key === 'f' || key === 'F') { app.selected = '__slave'; app.pending = null; renderShop(); refresh(); }
       else if (key === 'r' || key === 'R') { doResolve(); }
       else if (key === ' ' || key === 'Enter') {
         if (els.btnEnd.disabled) return;

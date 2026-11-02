@@ -354,8 +354,24 @@ function doAct(ws, msg) {
 
   if (action.kind === 'place') {
     if (!g.types[action.type]) return send(ws, { t: 'err', msg: '未知兵种' });
-    g.place(g.active, action.type, String(action.cell));
-    event = { kind: 'place', owner: seat, type: action.type, cell: String(action.cell) };
+    const opts = {};
+    if (action.dir != null) opts.dir = Number(action.dir);
+    try {
+      g.place(g.active, action.type, String(action.cell), opts);
+    } catch (e) {
+      return send(ws, { t: 'err', msg: e.message || '无法放置' });
+    }
+    event = {
+      kind: 'place', owner: seat, type: action.type,
+      cell: String(action.cell), dir: (opts.dir == null ? null : opts.dir)
+    };
+  } else if (action.kind === 'slave') {
+    try {
+      g.placeSlave(g.active, String(action.cell));
+    } catch (e) {
+      return send(ws, { t: 'err', msg: e.message || '无法召唤奴隶' });
+    }
+    event = { kind: 'slave', owner: seat, cell: String(action.cell) };
   } else if (action.kind === 'resolve') {
     const result = g.resolve();
     event = {

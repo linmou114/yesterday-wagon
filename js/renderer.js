@@ -188,8 +188,17 @@ window.Renderer = (function () {
     else if (inspect) focusPiece = g.pieceAt(inspect.key);
     if (focusPiece && focusPiece.atk > 0) this.drawRange(focusPiece);
 
+    // 3.5 场上狙击兵的射线 + 指挥所光环
+    g.pieces.forEach(function (p) {
+      if (p.kind === 'sniper') self.drawSniperLine(p, 0.30);
+      if (p.kind === 'command') self.drawAura(p);
+    });
+
     // 4. 棋子
     g.pieces.forEach(function (p) { self.drawPiece(p, 1); });
+
+    // 4.5 待定方向（狙击兵刚点下落点时）
+    if (ui.pending) self.drawPendingDirection(ui.pending);
 
     // 5. 放置预览
     if (hover && selected && ui.canAfford && legal.has(hover.key) && !g.over) {
@@ -227,15 +236,127 @@ window.Renderer = (function () {
     }
   };
 
+  // 狙击兵的直线射线
+  Renderer.prototype.drawSniperLine = function (p, alpha) {
+    var ctx = this.ctx;
+    var s = this.hexSize;
+    var col = this.game.players[p.owner].color;
+    var cells = this.game.attackCells(p);
+    if (!cells.size) return;
+    var from = Hex.parse(p.key);
+    var start = this.cellCenter(from.q, from.r);
+    ctx.save();
+    ctx.globalAlpha = alpha == null ? 0.35 : alpha;
+    ctx.setLineDash([6, 5]);
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = rgba(col, 0.9);
+    var self = this;
+    cells.forEach(function (k) {
+      var c = Hex.parse(k);
+      var pos = self.cellCenter(c.q, c.r);
+      ctx.beginPath();
+      ctx.moveTo(start.x, start.y);
+      ctx.lineTo(pos.x, pos.y);
+      ctx.stroke();
+      self.hexPath(pos.x, pos.y, s * 0.55);
+      ctx.fillStyle = rgba(col, 0.10);
+      ctx.fill();
+    });
+    ctx.restore();
+  };
+
+  // 指挥所：给相邻己方棋子加一圈金边
+  Renderer.prototype.drawAura = function (p) {
+    var ctx = this.ctx;
+    var s = this.hexSize;
+    var c = Hex.parse(p.key);
+    var pos = this.cellCenter(c.q, c.r);
+    ctx.save();
+    this.hexPath(pos.x, pos.y, s * 1.28);
+    ctx.setLineDash([4, 4]);
+    ctx.lineWidth = 1.6;
+    ctx.strokeStyle = 'rgba(251,191,36,0.55)';
+    ctx.stroke();
+    ctx.restore();
+  };
+
+  // 待选方向：把 6 个方向各画一个箭头，当前方向高亮并画出射线
+  Renderer.prototype.drawPendingDirection = function (pending) {
+    var ctx = this.ctx;
+    var s = this.hexSize;
+    var g = this.game;
+    var from = Hex.parse(pending.cell);
+    var pos = this.cellCenter(from.q, from.r);
+    var col = g.players[pending.owner == null ? g.active : pending.owner].color;
+    var self = this;
+
+    for (var d = 0; d < 6; d++) {
+      var dir = Hex.DIRS[d];
+      var ax = pos.x + dir.q * s * 0.62 + dir.r * 0;
+      var ay = pos.y + Math.sqrt(3) * s * 0.62 * (dir.r + dir.q / 2);
+      var active = (pending.dir === d);
+
+      // 射线预览
+      if (active) {
+        var len = pending.len || 3;
+        for (var step = 1; step <= len; step++) {
+          var k = Hex.key(from.q + dir.q * step, from.r + dir.r * step);
+          if (!g.board.cells.has(k)) break;
+          var c2 = Hex.parse(k);
+          var p2 = self.cellCenter(c2.q, c2.r);
+          self.hexPath(p2.x, p2.y, s * 0.8);
+          ctx.fillStyle = rgba(col, 0.16);
+          ctx.fill();
+          ctx.save();
+          ctx.setLineDash([4, 3]);
+          ctx.lineWidth = 1.6;
+          ctx.strokeStyle = rgba(col, 0.8);
+          ctx.stroke();
+          ctx.restore();
+        }
+      }
+
+      // 方向箭头
+      ctx.save();
+      ctx.globalAlpha = active ? 1 : 0.62;
+      ctx.translate(ax, ay);
+      var ang = Math.atan2(ay - pos.y, ax - pos.x);
+      ctx.rotate(ang);
+      // 箭头底座，提升可读性
+      ctx.beginPath();
+      ctx.arc(0, 0, s * 0.20, 0, Math.PI * 2);
+      ctx.fillStyle = active ? 'rgba(8,14,24,0.72)' : 'rgba(8,14,24,0.45)';
+      ctx.fill();
+      ctx.beginPath();
+      ctx.moveTo(s * 0.24, 0);
+      ctx.lineTo(-s * 0.10, -s * 0.17);
+      ctx.lineTo(-s * 0.10, s * 0.17);
+      ctx.closePath();
+      ctx.fillStyle = active ? col : 'rgba(205,220,240,0.9)';
+      ctx.fill();
+      if (active) {
+        ctx.lineWidth = 1.4;
+        ctx.strokeStyle = 'rgba(255,255,255,0.75)';
+        ctx.stroke();
+      }
+      ctx.restore();
+    }
+
+    // 落点上的半透明棋子预览
+    if (pending.type) {
+      var ghost = { owner: pending.owner == null ? g.active : pending.owner, kind: pending.type };
+      this.drawGlyph(pos.x, pos.y, ghost, 0.5);
+    }
+  };
+
   Renderer.prototype.drawRange = function (p) {
     var ctx = this.ctx;
     var s = this.hexSize;
     var col = this.game.players[p.owner].color;
-    var from = Hex.parse(p.key);
     var self = this;
-    this.game.board.order.forEach(function (c) {
-      var d = Hex.distance(from, { q: c.q, r: c.r });
-      if (d === 0 || d > p.range) return;
+    var cells = this.game.attackCells(p);
+    cells.forEach(function (k) {
+      var c = Hex.parse(k);
       var pos = self.cellCenter(c.q, c.r);
       self.hexPath(pos.x, pos.y, s * 0.9);
       ctx.fillStyle = rgba(col, 0.05);

@@ -231,6 +231,44 @@ function send(ws, msg) { ws.send(JSON.stringify(msg)); }
     a3.close();
     b3.close();
 
+    console.log('== 新兵种协议 ==');
+    {
+      const a5 = await connect();
+      send(a5, { t: 'create', settings: { side: 5, density: 0, rules: { firstPlayer: 1, energyPerTurn: 9, baseHp: 4 }, types: {} } });
+      const room5 = await waitFor(a5, (m) => m.t === 'room', '新兵种房间');
+      await waitFor(a5, (m) => m.t === 'state', '新兵种初始状态');
+      const b5 = await connect();
+      send(b5, { t: 'join', code: room5.code });
+      await waitFor(b5, (m) => m.t === 'room', 'B 加入');
+      await waitFor(a5, (m) => m.t === 'state' && m.seats[1] === true, '两人齐');
+
+      // 先手是座位 1，用 b5 操作
+      a5.inbox.forEach((m) => { m.__used = true; });
+      b5.inbox.forEach((m) => { m.__used = true; });
+
+      // 1) 狙击兵不带方向 → 服务端拒绝
+      send(b5, { t: 'act', action: { kind: 'place', type: 'sniper', cell: '0,3' } });
+      const errDir = await waitFor(b5, (m) => m.t === 'err', '狙击兵缺方向被拒');
+      ok(/方向/.test(errDir.msg), '不带方向的狙击兵被服务端拒绝');
+
+      // 2) 指挥所正常放置 → 事件里带类型
+      b5.inbox.forEach((m) => { m.__used = true; });
+      a5.inbox.forEach((m) => { m.__used = true; });
+      send(b5, { t: 'act', action: { kind: 'place', type: 'command', cell: '0,3' } });
+      const evCmd = await waitFor(a5, (m) => m.t === 'state' && m.event && m.event.kind === 'place', '指挥所放置广播');
+      ok(evCmd.event.type === 'command', '新兵种放置事件带类型');
+      const placed = evCmd.state.pieces.find((p) => p.k === 'command');
+      ok(!!placed, '状态里能看到刚放下的指挥所');
+
+      // 3) 非法动作不应让服务端崩：再发一次同格放置
+      b5.inbox.forEach((m) => { m.__used = true; });
+      send(b5, { t: 'act', action: { kind: 'place', type: 'infantry', cell: '0,3' } });
+      const errAgain = await waitFor(b5, (m) => m.t === 'err', '重复占位被拒');
+      ok(/已经有棋子|不能|不合法|未知/.test(errAgain.msg), '重复占位被服务端拒绝');
+
+      a5.close();
+      b5.close();
+    }
     console.log('== 房间生命周期 ==');
     const a4 = await connect();
     send(a4, { t: 'create', settings: { side: 4, density: 0, rules: { firstPlayer: 1, energyPerTurn: 3, baseHp: 4 }, types: {} } });

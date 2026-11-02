@@ -1,4 +1,4 @@
-/* =========================================================
+﻿/* =========================================================
  * menu.js —— 开始菜单页（index.html）
  *
  *   只负责：模式选择（跳转到 game.html）、设置编辑、规则、
@@ -144,7 +144,7 @@
 
   function renderUnitRows() {
     var html = '';
-    ENGINE.TYPE_LIST.forEach(function (id) {
+    (ENGINE.ALL_TYPE_LIST || ENGINE.TYPE_LIST).forEach(function (id) {
       var def = ENGINE.TYPES[id];
       html += '<tr><td><b>' + def.name + '</b></td>';
       ['hp', 'atk', 'range', 'cost'].forEach(function (f) {

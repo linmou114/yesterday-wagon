@@ -24,6 +24,9 @@
 
   function pieceValue(p) {
     if (p.kind === 'base') return 15 * p.hp;
+    if (p.kind === 'command') return 2.4 * p.hp + 5.5;      // 光环价值按「半个攻击点」折算
+    if (p.kind === 'sniper') return 2.4 * p.hp + 3.2 * 3 * 0.62 + 2.0;
+    if (p.kind === 'slave') return 1.6 * p.hp + 1.4;
     return 2.4 * p.hp + 3.2 * p.atk * Math.max(1, p.range) + 2.0;
   }
 
@@ -88,12 +91,36 @@
       var type = types[i];
       var t = g.types ? g.types[type] : ENGINE.TYPES[type];
       if (!t || t.cost > g.energy) continue;
+      var dirs = (t.rangeMode === 'line') ? [0, 1, 2, 3, 4, 5] : [null];
       for (var j = 0; j < legal.length; j++) {
-        var sim = g.clone();
-        try { sim.place(me, type, legal[j]); } catch (e) { continue; }
-        var s = evaluate(sim, me);
-        if (!best || s > best.score) best = { type: type, cell: legal[j], score: s };
+        for (var d = 0; d < dirs.length; d++) {
+          var sim = g.clone();
+          try {
+            if (dirs[d] == null) sim.place(me, type, legal[j]);
+            else sim.place(me, type, legal[j], { dir: dirs[d] });
+          } catch (e) { continue; }
+          var score = evaluate(sim, me);
+          if (!best || score > best.score) {
+            best = { type: type, cell: legal[j], dir: dirs[d], score: score };
+          }
+        }
       }
+    }
+    return best;
+  }
+
+  // 免费奴隶：只要还有额度就尽量用掉（不花费用）
+  function chooseSlave(g) {
+    var me = g.active;
+    if (typeof g.freeSlavesLeft !== 'function' || g.freeSlavesLeft(me) <= 0) return null;
+    var legal = Array.from(g.legalCells(me));
+    if (!legal.length) return null;
+    var best = null;
+    for (var j = 0; j < legal.length; j++) {
+      var sim = g.clone();
+      try { sim.placeSlave(me, legal[j]); } catch (e) { continue; }
+      var score = evaluate(sim, me);
+      if (!best || score > best.score) best = { cell: legal[j], score: score };
     }
     return best;
   }
@@ -120,13 +147,27 @@
   function playTurn(g) {
     var me = g.active;
     var guard = 0;
+
+    // 先把免费的奴隶用掉（不花费用）
+    while (!g.over && guard++ < 16) {
+      var sv = chooseSlave(g);
+      if (!sv) break;
+      try { g.placeSlave(me, sv.cell); } catch (e) { break; }
+    }
+
+    // 再用费用买兵
+    guard = 0;
     while (!g.over && g.energy > 0 && guard++ < 16) {
       var mv = chooseMove(g);
       if (!mv) break;
       var before = g.energy;
-      try { g.place(me, mv.type, mv.cell); } catch (e) { break; }
+      try {
+        if (mv.dir == null) g.place(me, mv.type, mv.cell);
+        else g.place(me, mv.type, mv.cell, { dir: mv.dir });
+      } catch (e) { break; }
       if (g.energy >= before) break;
     }
+
     if (!g.over && shouldResolve(g)) g.resolve();
     return g;
   }
@@ -137,6 +178,7 @@
     shouldResolve: shouldResolve,
     playTurn: playTurn,
     pieceValue: pieceValue,
+    chooseSlave: chooseSlave,
     acceptsDraw: acceptsDraw
   };
 });

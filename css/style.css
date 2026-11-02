@@ -1056,6 +1056,30 @@ input[type="range"]::-moz-range-thumb {
   border-color: rgba(45, 212, 191, 0.45);
   background: rgba(45, 212, 191, 0.12);
 }
+/* ---------- 六个兵种 + 免费奴隶 ---------- */
+
+/* 卡片变多以后允许横向滚动，避免挤压 */
+.shop { overflow-x: auto; overflow-y: hidden; scrollbar-width: thin; }
+.shop::-webkit-scrollbar { height: 4px; }
+.shop::-webkit-scrollbar-thumb { background: rgba(122, 160, 214, 0.3); border-radius: 4px; }
+
+.card { flex: 0 0 auto; min-width: 118px; padding: 7px 10px; }
+
+.card .card-name { font-size: 12.5px; }
+.card .card-cost { font-size: 10.5px; }
+.card .card-line { font-size: 10px; }
+
+/* 免费奴隶卡：金色调，和普通卡区分 */
+.card.free {
+  border-color: rgba(251, 191, 36, 0.55);
+  background: linear-gradient(180deg, rgba(251, 191, 36, 0.16), rgba(251, 191, 36, 0.04));
+}
+.card.free .card-cost { color: var(--gold); }
+.card.free.sel {
+  border-color: rgba(251, 191, 36, 0.95);
+  box-shadow: 0 0 0 1px rgba(251, 191, 36, 0.45), 0 12px 30px -20px rgba(251, 191, 36, 0.9);
+  background: linear-gradient(180deg, rgba(251, 191, 36, 0.26), rgba(251, 191, 36, 0.08));
+}
 /* ---------- 新手教学 ---------- */
 
 .tut-panel {

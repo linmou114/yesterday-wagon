@@ -1,4 +1,4 @@
-/* =========================================================
+﻿/* =========================================================
  * settings.js —— 设置的数据模型（菜单页与对局页共用）
  *
  *   菜单页负责「编辑」，对局页只负责「读取」，
@@ -22,6 +22,13 @@
     return Math.round(clampNum(v, min, max, fallback));
   }
 
+  function buildTypeDefaults() {
+    var out = {};
+    var ids = ENGINE.ALL_TYPE_LIST || Object.keys(ENGINE.TYPES);
+    ids.forEach(function (id) { out[id] = cloneType(ENGINE.TYPES[id]); });
+    return out;
+  }
+
   function defaults() {
     return {
       mapMode: 'random',
@@ -32,11 +39,7 @@
       firstPlayer: ENGINE.DEFAULT_RULES.firstPlayer,
       lastBonus: 1,
       baseHp: ENGINE.DEFAULT_RULES.baseHp,
-      types: {
-        infantry: cloneType(ENGINE.TYPES.infantry),
-        tank: cloneType(ENGINE.TYPES.tank),
-        artillery: cloneType(ENGINE.TYPES.artillery)
-      }
+      types: buildTypeDefaults()
     };
   }
 
@@ -52,7 +55,7 @@
     s.mapMode = (s.mapMode === 'default') ? 'default' : 'random';
     s.defaultMap = clampInt(s.defaultMap, 0, DEFAULT_MAPS.length - 1, 0);
     if (!s.types) s.types = {};
-    ENGINE.TYPE_LIST.forEach(function (id) {
+    (ENGINE.ALL_TYPE_LIST || ENGINE.TYPE_LIST).forEach(function (id) {
       if (!s.types[id]) s.types[id] = cloneType(ENGINE.TYPES[id]);
       var t = s.types[id];
       t.hp = clampInt(t.hp, 1, 30, ENGINE.TYPES[id].hp);
@@ -103,7 +106,7 @@
       'mapMode', 'defaultMap'].forEach(function (k) {
       if (saved[k] !== undefined) base[k] = saved[k];
     });
-    ENGINE.TYPE_LIST.forEach(function (id) {
+    (ENGINE.ALL_TYPE_LIST || ENGINE.TYPE_LIST).forEach(function (id) {
       var st = saved.types && saved.types[id];
       if (!st) return;
       ['hp', 'atk', 'range', 'cost'].forEach(function (f) {

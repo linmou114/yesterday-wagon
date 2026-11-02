@@ -241,7 +241,9 @@ console.log('== 6. 随机对局压力测试 ==');
           if (!legal.length || !afford.length) break;
           const type = afford[Math.floor(rng() * afford.length)];
           const cell = legal[Math.floor(rng() * legal.length)];
-          g.place(g.active, type, cell);
+          const tt = ENGINE.TYPES[type];
+          if (tt.rangeMode === 'line') g.place(g.active, type, cell, { dir: Math.floor(rng() * 6) });
+          else g.place(g.active, type, cell);
           actions++;
           placed++;
           if (rng() < 0.15) break;
@@ -430,6 +432,89 @@ console.log('== 9. 自定义数值（设置项） ==');
   const res = g2.resolve();
   eq(res.damage.get(t.id), 2, '两个敌人 2 点伤害');
   eq(res.killedByDamage.length, 1, '2 血步兵吃 2 点死亡');
+}
+console.log('== 10. 新兵种：指挥所 / 狙击兵 / 奴隶主 ==');
+{
+  const mk = (energy) => new ENGINE.Game({
+    side: 5, density: 0, seed: 41,
+    rules: { baseHp: 4, energyPerTurn: energy || 20, firstPlayer: 1, firstTurnEnergy: [energy || 20, energy || 20] }
+  });
+
+  // 指挥所光环
+  {
+    const g = mk();
+    clearBoard(g);
+    const foe = force(g, 0, 'infantry', 0, 0);
+    const inf = force(g, 1, 'infantry', 0, 1);
+    eq(g.atkOf(inf), 1, '指挥所：无光环时攻击力为 1');
+    const cmd = force(g, 1, 'command', 1, 1);
+    eq(g.atkOf(inf), 2, '指挥所：相邻己方 +1 攻');
+    eq(g.damageMap().get(foe.id), 2, '指挥所：敌人实际吃到 2 点');
+    eq(g.atkOf(cmd), 0, '指挥所：自身不能攻击');
+    eq(g.attackCells(cmd).size, 0, '指挥所：攻击范围为空');
+    force(g, 1, 'command', -1, 1);
+    eq(g.atkOf(inf), 3, '指挥所：两个光环可以叠加');
+  }
+
+  // 狙击兵直线
+  {
+    const g = mk();
+    clearBoard(g);
+    const sn = g.spawn(1, 'sniper', '0,2', 2, 2);   // 方向 2 = (0,-1)
+    const cells = [...g.attackCells(sn)].sort();
+    eq(cells.length, 3, '狙击兵：直线正好 3 格');
+    ok(cells.every((k) => { const c = Hex.parse(k); return c.q === 0 && c.r < 2; }), '狙击兵：3 格都在选定方向上');
+    sn.dir = 0;
+    const cells2 = [...g.attackCells(sn)];
+    ok(cells2.every((k) => { const c = Hex.parse(k); return c.q > 0; }), '狙击兵：换方向后改打 +q 一侧');
+    const bad = g.canPlace(1, 'sniper', [...g.legalCells(1)][0]);
+    ok(!bad.ok && /方向/.test(bad.msg), '狙击兵：部署必须带方向');
+  }
+
+  // 狙击兵只能打到直线上的人
+  {
+    const g = mk();
+    clearBoard(g);
+    g.spawn(1, 'sniper', '0,2', 2, 2);
+    const onLine = force(g, 0, 'infantry', 0, 0);
+    const offLine = force(g, 0, 'infantry', 1, 0);
+    const dm = g.damageMap();
+    eq(dm.get(onLine.id), 1, '狙击兵：直线上的敌人挨打');
+    eq(dm.get(offLine.id), 0, '狙击兵：线外的敌人不挨打');
+  }
+
+  // 奴隶主
+  {
+    const g = mk(3);
+    clearBoard(g);
+    eq(g.freeSlavesLeft(1), 0, '奴隶主：没有奴隶主就没有免费奴隶');
+    g.spawn(1, 'slaver', '0,2');
+    eq(g.freeSlavesLeft(1), 1, '奴隶主：本回合 1 个免费奴隶');
+    const before = g.energy;
+    const legal = [...g.legalCells(1)][0];
+    g.placeSlave(1, legal);
+    eq(g.energy, before, '奴隶主：召唤奴隶不花费用');
+    eq(g.freeSlavesLeft(1), 0, '奴隶主：用掉后额度归零');
+    let threw = false;
+    try { g.placeSlave(1, [...g.legalCells(1)][0]); } catch (e) { threw = true; }
+    ok(threw, '奴隶主：额度用完不能再召唤');
+    const cant = g.canPlace(1, 'slave', [...g.legalCells(1)][0]);
+    ok(!cant.ok, '奴隶：不能直接用费用部署');
+    g.endTurn(); g.endTurn();
+    eq(g.freeSlavesLeft(1), 1, '奴隶主：新回合额度刷新');
+  }
+
+  // 序列化保留方向与配额
+  {
+    const g = mk();
+    clearBoard(g);
+    const sn = g.spawn(1, 'sniper', '0,2', 2, 4);
+    g.slavesUsed[1] = 1;
+    const back = ENGINE.Game.fromJSON(g.toJSON());
+    const sn2 = [...back.pieces.values()].find((p) => p.kind === 'sniper');
+    eq(sn2.dir, 4, '序列化：狙击方向保留');
+    eq(back.slavesUsed[1], 1, '序列化：奴隶配额保留');
+  }
 }
 console.log('\n通过 ' + pass + ' 项，失败 ' + fail + ' 项');
 process.exit(fail ? 1 : 0);

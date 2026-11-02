@@ -37,10 +37,33 @@
       id: 'artillery', name: '炮兵', glyph: '炮', order: 3,
       hp: 3, atk: 1, range: 2, cost: 2,
       desc: '射程 2，可隔着一排棋子输出，也是拆家的关键。'
+    },
+    command: {
+      id: 'command', name: '指挥所', glyph: '指', order: 4,
+      hp: 2, atk: 0, range: 0, cost: 2, rangeMode: 'none', aura: true,
+      desc: '自己不能攻击；相邻一圈的己方棋子攻击力 +1。'
+    },
+    sniper: {
+      id: 'sniper', name: '狙击兵', glyph: '狙', order: 5,
+      hp: 2, atk: 1, range: 3, cost: 2, rangeMode: 'line',
+      desc: '部署时选定一个方向，攻击沿该方向的一条直线，最多打到 3 格外。'
+    },
+    slaver: {
+      id: 'slaver', name: '奴隶主', glyph: '主', order: 6,
+      hp: 3, atk: 1, range: 1, cost: 2,
+      desc: '每回合额外免费放置一个奴隶（不花费用）。'
+    },
+    slave: {
+      id: 'slave', name: '奴隶', glyph: '隶', order: 7,
+      hp: 2, atk: 1, range: 1, cost: 0, noDeploy: true,
+      desc: '只能由奴隶主免费召唤，不能直接用费用部署。'
     }
   };
 
-  var TYPE_LIST = ['infantry', 'tank', 'artillery'];
+  // 商店里可以直接买的
+  var TYPE_LIST = ['infantry', 'tank', 'artillery', 'command', 'sniper', 'slaver'];
+  // 全部（含召唤物），用于序列化与设置表
+  var ALL_TYPE_LIST = ['infantry', 'tank', 'artillery', 'command', 'sniper', 'slaver', 'slave'];
 
   // 默认规则（设置里可以改）
   var DEFAULT_RULES = {
@@ -115,6 +138,7 @@
     this.kills = [0, 0];         // 各方的击杀数（含断联移除）
     this.lost = [0, 0];          // 各方的损失数
     this.maxSwing = [0, 0];      // 单次结算最多清掉对方几个棋子
+    this.slavesUsed = [0, 0];    // 本回合各方已经召出的奴隶数（每回合清零）
 
     this.baseIds = [null, null];
     this.baseIds[0] = this.spawnBase(0, this.board.baseA).id;
@@ -214,12 +238,16 @@
     return out;
   };
 
-  Game.prototype.canPlace = function (owner, typeId, cellKey) {
+  Game.prototype.canPlace = function (owner, typeId, cellKey, opts) {
+    opts = opts || {};
     var t = this.types[typeId];
     if (!t) return { ok: false, msg: '未知兵种' };
     if (this.over) return { ok: false, msg: '对局已结束' };
     if (owner !== this.active) return { ok: false, msg: '还没轮到你' };
-    if (this.energy < t.cost) return { ok: false, msg: '费用不足' };
+    if (t.noDeploy && !opts.free) return { ok: false, msg: '这个兵种只能由奴隶主召唤' };
+    if (t.rangeMode === 'line' && opts.dir == null) return { ok: false, msg: '请先选择狙击方向' };
+    if (opts.dir != null && (opts.dir < 0 || opts.dir > 5)) return { ok: false, msg: '方向不合法' };
+    if (!opts.free && this.energy < t.cost) return { ok: false, msg: '费用不足' };
     var cell = this.board.cells.get(cellKey);
     if (!cell) return { ok: false, msg: '地图外' };
     if (cell.obstacle) return { ok: false, msg: '这里是障碍' };
@@ -230,8 +258,9 @@
 
   /* ---------------- 行动 ---------------- */
 
-  Game.prototype.place = function (owner, typeId, cellKey) {
-    var check = this.canPlace(owner, typeId, cellKey);
+  Game.prototype.place = function (owner, typeId, cellKey, opts) {
+    opts = opts || {};
+    var check = this.canPlace(owner, typeId, cellKey, opts);
     if (!check.ok) {
       var e = new Error(check.msg);
       e.code = 'ILLEGAL';
@@ -240,27 +269,57 @@
     var t = this.types[typeId];
     var p = {
       id: this.nextId++, owner: owner, kind: typeId, key: cellKey,
-      hp: t.hp, maxHp: t.hp, atk: t.atk, range: t.range
+      hp: t.hp, maxHp: t.hp, atk: t.atk, range: t.range,
+      dir: (t.rangeMode === 'line') ? (opts.dir == null ? 0 : opts.dir) : null
     };
     this.pieces.set(p.id, p);
     this.occupant.set(cellKey, p.id);
-    this.energy -= t.cost;
+    if (!opts.free) this.energy -= t.cost;
 
     this.history.push({
-      type: 'place', owner: owner, kind: typeId, key: cellKey, turn: this.turn
+      type: 'place', owner: owner, kind: typeId, key: cellKey,
+      dir: p.dir, free: !!opts.free, turn: this.turn
     });
     return p;
   };
 
+  /* ---------------- 奴隶：由奴隶主免费召唤 ---------------- */
+
+  Game.prototype.slaverCount = function (owner) {
+    var n = 0;
+    this.pieces.forEach(function (p) {
+      if (p.owner === owner && p.kind === 'slaver') n += 1;
+    });
+    return n;
+  };
+
+  // 本方本回合还能免费召唤几个奴隶
+  Game.prototype.freeSlavesLeft = function (owner) {
+    var used = this.slavesUsed[owner] || 0;
+    return Math.max(0, this.slaverCount(owner) - used);
+  };
+
+  Game.prototype.placeSlave = function (owner, cellKey) {
+    if (this.freeSlavesLeft(owner) <= 0) {
+      var e = new Error('本回合没有可召唤的奴隶了');
+      e.code = 'ILLEGAL';
+      throw e;
+    }
+    var p = this.place(owner, 'slave', cellKey, { free: true });
+    this.slavesUsed[owner] = (this.slavesUsed[owner] || 0) + 1;
+    return p;
+  };
+
   // 教学 / 测试专用：无视放置规则直接把棋子摆上去（hp 可指定，用来做残血场景）
-  Game.prototype.spawn = function (owner, typeId, cellKey, hp) {
+  Game.prototype.spawn = function (owner, typeId, cellKey, hp, dir) {
     var t = this.types[typeId];
     if (!t) return null;
     if (!this.board.cells.has(cellKey)) return null;
     if (this.occupant.has(cellKey)) return null;
     var p = {
       id: this.nextId++, owner: owner, kind: typeId, key: cellKey,
-      hp: (hp == null ? t.hp : hp), maxHp: t.hp, atk: t.atk, range: t.range
+      hp: (hp == null ? t.hp : hp), maxHp: t.hp, atk: t.atk, range: t.range,
+      dir: (t.rangeMode === 'line') ? (dir == null ? 0 : dir) : null
     };
     this.pieces.set(p.id, p);
     this.occupant.set(cellKey, p.id);
@@ -275,19 +334,70 @@
   };
 
   // 每个棋子会吃到的敌方攻击力总和（只读，不改变局面；AI 和结算共用）
-  Game.prototype.damageMap = function () {
-    var all = [];
-    this.pieces.forEach(function (p) { all.push(p); });
-    var cells = all.map(function (p) { return Hex.parse(p.key); });
-    var out = new Map();
-    for (var i = 0; i < all.length; i++) {
-      var sum = 0;
-      for (var j = 0; j < all.length; j++) {
-        if (all[j].owner === all[i].owner || all[j].atk <= 0) continue;
-        if (Hex.distance(cells[j], cells[i]) <= all[j].range) sum += all[j].atk;
+  // 实际攻击力：棋子基础值 + 相邻己方「指挥所」提供的光环（每个 +1，可叠加）
+  Game.prototype.atkOf = function (piece) {
+    var base = piece.atk || 0;
+    if (base <= 0) return 0;
+    var from = Hex.parse(piece.key);
+    var bonus = 0;
+    this.pieces.forEach(function (o) {
+      if (o.owner !== piece.owner || o.kind !== 'command') return;
+      if (Hex.distance(Hex.parse(o.key), from) === 1) bonus += 1;
+    });
+    return base + bonus;
+  };
+
+  // 某个棋子能打到的格子集合
+  Game.prototype.attackCells = function (piece) {
+    var out = new Set();
+    var t = this.types[piece.kind] || TYPES[piece.kind] || {};
+    if ((piece.atk || 0) <= 0) return out;
+    var from = Hex.parse(piece.key);
+    var mode = t.rangeMode || 'circle';
+
+    if (mode === 'line') {
+      // 直线：沿部署时选定的方向，最多 range 格
+      var d = Hex.DIRS[piece.dir == null ? 0 : piece.dir] || Hex.DIRS[0];
+      var len = Math.max(1, piece.range || 1);
+      for (var step = 1; step <= len; step++) {
+        var k = Hex.key(from.q + d.q * step, from.r + d.r * step);
+        if (this.board.cells.has(k)) out.add(k);
       }
-      out.set(all[i].id, sum);
+      return out;
     }
+
+    // 圆形：距离 <= range
+    var r = Math.max(0, piece.range || 0);
+    for (var dq = -r; dq <= r; dq++) {
+      for (var dr = -r; dr <= r; dr++) {
+        if (Math.abs(dq + dr) > r) continue;
+        if (dq === 0 && dr === 0) continue;
+        var key = Hex.key(from.q + dq, from.r + dr);
+        if (this.board.cells.has(key)) out.add(key);
+      }
+    }
+    return out;
+  };
+
+  Game.prototype.damageMap = function () {
+    var self = this;
+    var out = new Map();
+    var all = [];
+    this.pieces.forEach(function (p) { all.push(p); out.set(p.id, 0); });
+
+    all.forEach(function (attacker) {
+      var a = self.atkOf(attacker);
+      if (a <= 0) return;
+      var cells = self.attackCells(attacker);
+      if (!cells.size) return;
+      cells.forEach(function (key) {
+        var id = self.occupant.get(key);
+        if (id == null) return;
+        var target = self.pieces.get(id);
+        if (!target || target.owner === attacker.owner) return;
+        out.set(target.id, (out.get(target.id) || 0) + a);
+      });
+    });
     return out;
   };
 
@@ -394,6 +504,7 @@
     this.energy = this.turnEnergy();
     this.turnEnergyMax = this.energy;
     this.resolveCount = 0;
+    this.slavesUsed[this.active] = 0;     // 新回合：奴隶主的免费额度刷新
     this.history.push({ type: 'turn', owner: this.active, turn: this.turn });
   };
 
@@ -427,7 +538,8 @@
     this.pieces.forEach(function (p, id) {
       g.pieces.set(id, {
         id: p.id, owner: p.owner, kind: p.kind, key: p.key,
-        hp: p.hp, maxHp: p.maxHp, atk: p.atk, range: p.range
+        hp: p.hp, maxHp: p.maxHp, atk: p.atk, range: p.range,
+        dir: (p.dir == null ? null : p.dir)
       });
     });
     g.occupant = new Map(this.occupant);
@@ -435,6 +547,7 @@
     g.kills = this.kills.slice();
     g.lost = this.lost.slice();
     g.maxSwing = this.maxSwing.slice();
+    g.slavesUsed = this.slavesUsed.slice();
     g.baseIds = this.baseIds.slice();
     g.firstPlayer = this.firstPlayer;
     g.active = this.active;
@@ -454,7 +567,8 @@
     this.pieces.forEach(function (p) {
       pieces.push({
         id: p.id, o: p.owner, k: p.kind, c: p.key,
-        hp: p.hp, m: p.maxHp, a: p.atk, r: p.range
+        hp: p.hp, m: p.maxHp, a: p.atk, r: p.range,
+        dir: (p.dir == null ? null : p.dir)
       });
     });
     var obstacles = [];
@@ -472,6 +586,7 @@
       kills: this.kills,
       lost: this.lost,
       maxSwing: this.maxSwing,
+      slavesUsed: this.slavesUsed,
       baseIds: this.baseIds,
       firstPlayer: this.firstPlayer,
       active: this.active,
@@ -507,7 +622,8 @@
       var p = {
         id: d.id, owner: d.o, kind: d.k, key: d.c,
         hp: d.hp, maxHp: d.m != null ? d.m : d.hp,
-        atk: d.a != null ? d.a : 0, range: d.r != null ? d.r : 0
+        atk: d.a != null ? d.a : 0, range: d.r != null ? d.r : 0,
+        dir: (d.dir == null ? null : d.dir)
       };
       g.pieces.set(p.id, p);
       g.occupant.set(p.key, p.id);
@@ -516,6 +632,7 @@
     g.kills = (s.kills || [0, 0]).slice();
     g.lost = (s.lost || [0, 0]).slice();
     g.maxSwing = (s.maxSwing || [0, 0]).slice();
+    g.slavesUsed = (s.slavesUsed || [0, 0]).slice();
     g.baseIds = (s.baseIds || [null, null]).slice();
     g.firstPlayer = s.firstPlayer;
     g.active = s.active;
@@ -532,6 +649,7 @@
   return {
     TYPES: TYPES,
     TYPE_LIST: TYPE_LIST,
+    ALL_TYPE_LIST: ALL_TYPE_LIST,
     DEFAULT_RULES: DEFAULT_RULES,
     BASE_HP: DEFAULT_RULES.baseHp,
     ENERGY_PER_TURN: DEFAULT_RULES.energyPerTurn,

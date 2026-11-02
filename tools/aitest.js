@@ -1,4 +1,4 @@
-/* AI 自检：能不能合法落子、会不会卡死、打得过乱下的人吗 */
+﻿/* AI 自检：能不能合法落子、会不会卡死、打得过乱下的人吗 */
 const ENGINE = require('../js/engine.js');
 const AI = require('../js/ai.js');
 
@@ -74,7 +74,10 @@ console.log('== 3. AI vs 随机乱下 ==');
           const legal = [...g.legalCells(1)];
           const types = ENGINE.TYPE_LIST.filter((k) => g.types[k].cost <= g.energy);
           if (!legal.length || !types.length) break;
-          g.place(1, types[Math.floor(rng() * types.length)], legal[Math.floor(rng() * legal.length)]);
+          const pk = types[Math.floor(rng() * types.length)];
+          const pc = legal[Math.floor(rng() * legal.length)];
+          if (g.types[pk].rangeMode === 'line') g.place(1, pk, pc, { dir: Math.floor(rng() * 6) });
+          else g.place(1, pk, pc);
         }
         if (rng() < 0.5) g.resolve();
       }
