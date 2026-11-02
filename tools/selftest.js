@@ -639,6 +639,39 @@ console.log('== 12. 可配置光环 ==');
     eq(t.aura.amount, 4, '光环：序列化保留数值');
   }
 }
+console.log('== 13. 狙击兵朝向 ==');
+{
+  const g = new ENGINE.Game({
+    side: 5, density: 0, seed: 71,
+    rules: { baseHp: 4, energyPerTurn: 9, firstPlayer: 1, firstTurnEnergy: [9, 9] }
+  });
+  const enemyBase = g.baseOf(0);
+  eq(enemyBase.key, '0,-4', '敌方大本营在地图上方');
+  const d = g.dirToward('0,2', enemyBase.key);
+  eq(d, 2, 'dirToward：赤方棋子默认朝上（方向 2）');
+  const from = Hex.parse('0,2');
+  const next = { q: from.q + Hex.DIRS[d].q, r: from.r + Hex.DIRS[d].r };
+  ok(Hex.distance(next, Hex.parse(enemyBase.key)) < Hex.distance(from, Hex.parse(enemyBase.key)),
+    'dirToward：选出的方向确实更靠近敌营');
+
+  // 沿这个方向放一个狙击兵，能打到自己正上方的敌人
+  const sn = g.spawn(1, 'sniper', '0,2', 2, d);
+  const cells = [...g.attackCells(sn)].sort();
+  eq(cells.length, 3, '沿默认方向的狙击兵有 3 格直线');
+  ok(cells.indexOf('0,-1') >= 0, '直线覆盖正上方 3 格');
+
+  // 换个方位也对
+  const d2 = g.dirToward('2,1', enemyBase.key);
+  const f2 = Hex.parse('2,1');
+  const n2 = { q: f2.q + Hex.DIRS[d2].q, r: f2.r + Hex.DIRS[d2].r };
+  ok(Hex.distance(n2, Hex.parse(enemyBase.key)) < Hex.distance(f2, Hex.parse(enemyBase.key)),
+    'dirToward：边缘位置的朝向也正确');
+
+  // 方向不同 → 打到的格子不同
+  const sn2 = g.spawn(1, 'sniper', '1,1', 2, 3);   // 朝左
+  const c2 = [...g.attackCells(sn2)];
+  ok(c2.every((k) => Hex.parse(k).q < 1), '方向 3 的狙击兵只打左侧');
+}
 console.log('\n通过 ' + pass + ' 项，失败 ' + fail + ' 项');
 process.exit(fail ? 1 : 0);
 

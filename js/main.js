@@ -512,24 +512,35 @@
   /* ---------------- 操作 ---------------- */
 
   // 狙击兵默认朝向：指着最近的敌方大本营
-  function defaultDir(cellKey) {
-    var g = app.game;
-    var me = g.active;
-    var base = g.board.baseOf ? g.board.baseOf(1 - me) : null;
-    var target = base ? Hex.parse(base.key) : null;
-    var from = Hex.parse(cellKey);
-    var best = 0, bestD = Infinity;
+    // 狙击兵默认朝向：指着敌方大本营
+  // 根据指针位置给「待定狙击」选方向（鼠标移动、触屏点按都走这里）
+  function aimAt(clientX, clientY) {
+    var pend = app.pending;
+    if (!pend || !app.renderer) return;
+    var from = Hex.parse(pend.cell);
+    var c0 = app.renderer.cellCenter(from.q, from.r);
+    var box = els.canvas.getBoundingClientRect();
+    var px = clientX - box.left - c0.x;
+    var py = clientY - box.top - c0.y;
+    if (px * px + py * py <= 16) return;      // 点在格子里：保持原方向
+    var best = pend.dir, bestD = -Infinity;
     for (var d = 0; d < 6; d++) {
       var dir = Hex.DIRS[d];
-      var nq = from.q + dir.q, nr = from.r + dir.r;
-      if (!g.board.cells.has(Hex.key(nq, nr))) continue;
-      var dist = target ? Hex.distance({ q: nq, r: nr }, target) : d;
-      if (dist < bestD) { bestD = dist; best = d; }
+      var vx = 1.5 * dir.q;
+      var vy = Math.sqrt(3) * (dir.r + dir.q / 2);
+      var dot = (px * vx + py * vy) / Math.sqrt(vx * vx + vy * vy);
+      if (dot > bestD) { bestD = dot; best = d; }
     }
-    return best;
+    pend.dir = best;
   }
-
-  function placePending() {
+  function defaultDir(cellKey) {
+    var g = app.game;
+    if (!g) return 0;
+    var base = g.baseOf ? g.baseOf(1 - g.active) : null;
+    if (g.dirToward) return g.dirToward(cellKey, base ? base.key : null);
+    return 0;
+  }
+function placePending() {
     var g = app.game;
     var pend = app.pending;
     if (!g || !pend) return;
@@ -1506,24 +1517,7 @@
       var k = cell ? cell.key : null;
 
       // 狙击选方向：按指针相对落点的方位取最近的 6 个方向之一
-      if (app.pending) {
-        var from = Hex.parse(app.pending.cell);
-        var c0 = app.renderer.cellCenter(from.q, from.r);
-        var box = els.canvas.getBoundingClientRect();
-        var px = e.clientX - box.left - c0.x;
-        var py = e.clientY - box.top - c0.y;
-        if (px * px + py * py > 4) {
-          var best = 0, bestD = -Infinity;
-          for (var d = 0; d < 6; d++) {
-            var dir = Hex.DIRS[d];
-            var vx = 1.5 * dir.q;
-            var vy = Math.sqrt(3) * (dir.r + dir.q / 2);
-            var dot = (px * vx + py * vy) / Math.sqrt(vx * vx + vy * vy);
-            if (dot > bestD) { bestD = dot; best = d; }
-          }
-          if (best !== app.pending.dir) { app.pending.dir = best; }
-        }
-      }
+      if (app.pending) aimAt(e.clientX, e.clientY);
 
       if ((app.hover && app.hover.key) === k) return;
       app.hover = cell;
@@ -1550,7 +1544,10 @@
 
     els.canvas.addEventListener('pointerdown', function (e) {
       var cell = app.renderer.pickCell(e.clientX, e.clientY);
-      if (cell) handleCellClick(cell);
+      if (!cell) return;
+      // 待定方向时，触屏用户点哪儿就朝哪儿，再确认
+      if (app.pending) aimAt(e.clientX, e.clientY);
+      handleCellClick(cell);
     });
 
     document.addEventListener('keydown', function (e) {

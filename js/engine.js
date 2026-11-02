@@ -486,6 +486,23 @@
     return Math.max(1, v);
   };
 
+  // 从 fromKey 出发，哪个方向离 target 最近（狙击兵默认朝向 / 预览用）
+  Game.prototype.dirToward = function (fromKey, targetKey) {
+    var from = Hex.parse(fromKey);
+    var target = targetKey ? Hex.parse(targetKey) : null;
+    var best = 0;
+    var bestD = Infinity;
+    for (var d = 0; d < 6; d++) {
+      var dir = Hex.DIRS[d];
+      var nq = from.q + dir.q;
+      var nr = from.r + dir.r;
+      if (!this.board.cells.has(Hex.key(nq, nr))) continue;
+      var dist = target ? Hex.distance({ q: nq, r: nr }, target) : d;
+      if (dist < bestD) { bestD = dist; best = d; }
+    }
+    return best;
+  };
+
   // 假设在这个格子放一个该兵种，它能打到哪些格子（放置前预览用）
   Game.prototype.attackCellsFrom = function (typeId, cellKey, dir) {
     var t = this.types[typeId] || TYPES[typeId];

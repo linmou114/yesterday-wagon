@@ -1,4 +1,4 @@
-﻿/* =========================================================
+/* =========================================================
  * renderer.js —— Canvas 绘制层（只画，不改规则状态）
  * ========================================================= */
 window.Renderer = (function () {
@@ -244,6 +244,9 @@ window.Renderer = (function () {
       ctx.stroke();
       ctx.restore();
     }
+
+    // 4.5 狙击兵待定方向：画 6 个方向箭头 + 当前方向的射线
+    if (ui.pending) this.drawPendingDirection(ui.pending);
 
     // 5. 放置预览
     if (hover && selected && ui.canAfford && legal.has(hover.key) && !g.over) {
