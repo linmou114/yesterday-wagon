@@ -110,5 +110,56 @@ console.log('== 4. 速度 ==');
   ok(!!mv, '中局应该还有可落子的点');
 }
 
+console.log('== 5. 光环 / 新规则感知 ==');
+{
+  const mk = (types) => new ENGINE.Game({
+    side: 5, density: 0, seed: 31,
+    rules: { baseHp: 4, energyPerTurn: 9, firstPlayer: 1, firstTurnEnergy: [9, 9] },
+    types: types || {}
+  });
+
+  const g1 = mk();
+  const alone = AI.pieceValue(g1, g1.spawn(1, 'command', '-2,3'));
+  const g2 = mk();
+  g2.spawn(1, 'infantry', '0,2');
+  g2.spawn(1, 'infantry', '1,2');
+  g2.spawn(1, 'infantry', '-1,2');
+  const covered = AI.pieceValue(g2, g2.spawn(1, 'command', '0,3'));
+  ok(covered > alone + 1, '光环覆盖 3 个友军时估值更高（' + alone.toFixed(1) + ' → ' + covered.toFixed(1) + '）');
+
+  const auraT = { radius: 2, effect: 'enemyHp', amount: 2 };
+  const g3 = mk({ debuff: { name: '腐蚀', hp: 2, atk: 0, range: 0, cost: 1, rangeMode: 'none', aura: auraT } });
+  g3.spawn(0, 'infantry', '0,0');
+  g3.spawn(0, 'infantry', '1,0');
+  const dBuff = AI.pieceValue(g3, g3.spawn(1, 'debuff', '0,1'));
+  const g4 = mk({ debuff: { name: '腐蚀', hp: 2, atk: 0, range: 0, cost: 1, rangeMode: 'none', aura: auraT } });
+  const dAlone = AI.pieceValue(g4, g4.spawn(1, 'debuff', '0,1'));
+  ok(dBuff > dAlone, '削弱敌人的光环也算价值');
+
+  const g5 = mk();
+  g5.spawn(1, 'slaver', '0,3');
+  g5.spawn(1, 'infantry', '0,2');
+  g5.spawn(1, 'infantry', '0,1');
+  const sv = AI.chooseSlave(g5);
+  ok(!!sv, '有奴隶主时 AI 想召唤奴隶');
+  const dd = Hex.distance(Hex.parse(sv.cell), Hex.parse('0,3'));
+  ok(dd === 1, 'AI 选的奴隶位置紧贴奴隶主（距离 ' + dd + '）');
+
+  const g6 = mk({ mod_x: { name: '重炮', glyph: '重', hp: 3, atk: 2, range: 2, cost: 2, rangeMode: 'circle' } });
+  g6.spawn(1, 'infantry', '0,2');
+  ok(!!AI.chooseMove(g6), '带自定义兵种时 AI 也能选点');
+
+  const g8 = mk();
+  const a = g8.spawn(1, 'tank', '0,2');
+  const healthy = AI.pieceValue(g8, a);
+  a.hp = 1;
+  ok(AI.pieceValue(g8, a) < healthy, '残血棋子估值更低');
+
+  const g9 = mk();
+  g9.spawn(1, 'infantry', '0,2');
+  ok(g9.legalCells(1).size > 0, '正常情况下有合法落点');
+  const mv9 = AI.chooseMove(g9);
+  ok(mv9 && typeof mv9.cell === 'string' && typeof mv9.score === 'number', 'AI 返回可用的选点结果');
+}
 console.log(`\n通过 ${pass} 项，失败 ${fail} 项`);
 process.exit(fail ? 1 : 0);

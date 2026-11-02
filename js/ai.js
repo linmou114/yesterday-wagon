@@ -22,12 +22,38 @@
   var LOSS = -100000;
   var DRAW = -500;
 
-  function pieceValue(p) {
+  // 这个棋子的光环覆盖了多少「点数」（己方受益 / 敌方受损）
+  function auraCoverage(g, p) {
+    var a = (g.auraOf ? g.auraOf(p) : null);
+    if (!a) return 0;
+    var from = Hex.parse(p.key);
+    var n = 0;
+    g.pieces.forEach(function (o) {
+      if (o.id === p.id) return;
+      if (Hex.distance(Hex.parse(o.key), from) > a.radius) return;
+      var friendly = (a.effect === 'atk' || a.effect === 'hp');
+      if (friendly && o.owner !== p.owner) return;
+      if (!friendly && o.owner === p.owner) return;
+      n += 1;
+    });
+    return n * a.amount;
+  }
+
+  // 单棋子的静态价值（把光环、实际攻防都算进去）
+  function pieceValue(g, p) {
+    g = g || null;
     if (p.kind === 'base') return 15 * p.hp;
-    if (p.kind === 'command') return 2.4 * p.hp + 5.5;      // 光环价值按「半个攻击点」折算
-    if (p.kind === 'sniper') return 2.4 * p.hp + 3.2 * 3 * 0.62 + 2.0;
-    if (p.kind === 'slave') return 1.6 * p.hp + 1.4;
-    return 2.4 * p.hp + 3.2 * p.atk * Math.max(1, p.range) + 2.0;
+    var hp = (g && g.hpOf) ? g.hpOf(p) : p.hp;
+    var atk = (g && g.atkOf) ? g.atkOf(p) : (p.atk || 0);
+    var range = Math.max(1, p.range || 1);
+    var v = 1.9 * hp + 2.4 * atk * (1 + 0.5 * (range - 1)) + 1.6;
+    if (g) {
+      var cover = auraCoverage(g, p);
+      if (cover) v += 0.55 * cover + 1.2;     // 光环本身也算它的价值
+    }
+    if (p.kind === 'slave') v *= 0.85;         // 免费召唤的炮灰，别当主力算
+    if (p.kind === 'slaver') v += 3.0;         // 每回合白嫖一个奴隶
+    return v;
   }
 
   // 从 me 的视角评估局面（越大越有利）
@@ -57,13 +83,18 @@
     }
 
     g.pieces.forEach(function (p) {
-      var v = pieceValue(p);
+      var v = pieceValue(g, p);
       var mine = p.owner === me;
+      var hpNow = (g.hpOf && p.kind !== 'base') ? g.hpOf(p) : p.hp;
 
       // 已经挨到致死线的棋子，价值大打折扣（下轮就要没了）
       var d = dmg.get(p.id) || 0;
-      if (d >= p.hp) v *= 0.35;
-      else if (d > 0) v *= 1 - 0.12 * Math.min(d, p.hp);
+      if (d >= hpNow) v *= 0.35;
+      else if (d > 0) v *= 1 - 0.12 * Math.min(d, hpNow);
+      // 残血棋子本身就更廉价（血越少越像消耗品）
+      if (p.kind !== 'base') {
+        v *= 0.72 + 0.28 * (hpNow / Math.max(1, p.maxHp || p.hp || 1));
+      }
 
       // 推进：离「对方的基地」越近越有价值
       var target = mine ? foeBase : myBase;
@@ -78,34 +109,73 @@
     return score;
   }
 
-  // 选一个最划算的落子；没有可放的返回 null
+  // 现在买得起哪些兵种
+  function affordableTypes(g) {
+    var types = g.typeList || ENGINE.TYPE_LIST;
+    var out = [];
+    for (var i = 0; i < types.length; i++) {
+      var t = (g.types && g.types[types[i]]) || ENGINE.TYPES[types[i]];
+      if (!t || t.cost > g.energy) continue;
+      out.push({ type: types[i], t: t });
+    }
+    return out;
+  }
+
+  // 值得替换掉的棋子：残血的、以及免费炮灰
+  function replaceTargets(g, me) {
+    var out = [];
+    g.pieces.forEach(function (p) {
+      if (p.owner !== me || p.kind === 'base') return;
+      if (p.kind === 'slave') { out.push(p); return; }
+      var hp = (g.hpOf ? g.hpOf(p) : p.hp);
+      if (hp <= 2) out.push(p);
+    });
+    return out;
+  }
+
+  // 选一个最划算的动作（落子或替换）；没有可做的返回 null
   function chooseMove(g) {
     var me = g.active;
     var legal = Array.from(g.legalCells(me));
-    if (!legal.length) return null;
+    var buys = affordableTypes(g);
+    if (!buys.length) return null;
 
-    var types = g.typeList || ENGINE.TYPE_LIST;
     var best = null;
 
-    for (var i = 0; i < types.length; i++) {
-      var type = types[i];
-      var t = g.types ? g.types[type] : ENGINE.TYPES[type];
-      if (!t || t.cost > g.energy) continue;
-      var dirs = (t.rangeMode === 'line') ? [0, 1, 2, 3, 4, 5] : [null];
-      for (var j = 0; j < legal.length; j++) {
-        for (var d = 0; d < dirs.length; d++) {
-          var sim = g.clone();
-          try {
-            if (dirs[d] == null) sim.place(me, type, legal[j]);
-            else sim.place(me, type, legal[j], { dir: dirs[d] });
-          } catch (e) { continue; }
-          var score = evaluate(sim, me);
-          if (!best || score > best.score) {
-            best = { type: type, cell: legal[j], dir: dirs[d], score: score };
-          }
-        }
+    function tryMove(type, cell, dir, replace) {
+      var sim = g.clone();
+      try {
+        if (dir == null) sim.place(me, type, cell);
+        else sim.place(me, type, cell, { dir: dir });
+      } catch (e) { return; }
+      var score = evaluate(sim, me);
+      if (!best || score > best.score) {
+        best = { type: type, cell: cell, dir: dir, replace: !!replace, score: score };
       }
     }
+
+    // 1) 空格落子
+    for (var i = 0; i < buys.length; i++) {
+      var type = buys[i].type;
+      var t = buys[i].t;
+      var dirs = (t.rangeMode === 'line') ? [0, 1, 2, 3, 4, 5] : [null];
+      for (var j = 0; j < legal.length; j++) {
+        for (var d = 0; d < dirs.length; d++) tryMove(type, legal[j], dirs[d], false);
+      }
+    }
+
+    // 2) 把残血棋子换成新的（要花新棋子的费用，老的算丢掉）
+    var targets = replaceTargets(g, me);
+    for (var a = 0; a < targets.length; a++) {
+      var oldP = targets[a];
+      for (var b = 0; b < buys.length; b++) {
+        if (buys[b].type === oldP.kind) continue;
+        var nt = buys[b].t;
+        var ndirs = (nt.rangeMode === 'line') ? [0, 1, 2, 3, 4, 5] : [null];
+        for (var e = 0; e < ndirs.length; e++) tryMove(buys[b].type, oldP.key, ndirs[e], true);
+      }
+    }
+
     return best;
   }
 
@@ -161,10 +231,11 @@
       var mv = chooseMove(g);
       if (!mv) break;
       var before = g.energy;
+      var acted = false;
       try {
-        if (mv.dir == null) g.place(me, mv.type, mv.cell);
-        else g.place(me, mv.type, mv.cell, { dir: mv.dir });
-      } catch (e) { break; }
+        acted = !!g.place(me, mv.type, mv.cell, mv.dir == null ? {} : { dir: mv.dir });
+      } catch (e) { acted = false; }
+      if (!acted) break;
       if (g.energy >= before) break;
     }
 
