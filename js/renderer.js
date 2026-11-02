@@ -188,6 +188,41 @@ window.Renderer = (function () {
     else if (inspect) focusPiece = g.pieceAt(inspect.key);
     if (focusPiece && focusPiece.atk > 0) this.drawRange(focusPiece);
 
+    // 2.5 落点预览：这个兵种放这里能打到哪
+    var preview = ui.previewCells;
+    if (preview && preview.size) {
+      preview.forEach(function (k) {
+        var c = Hex.parse(k);
+        var p = self.cellCenter(c.q, c.r);
+        self.hexPath(p.x, p.y, s * 0.74);
+        ctx.fillStyle = 'rgba(251,191,36,0.14)';
+        ctx.fill();
+        ctx.save();
+        ctx.setLineDash([3, 3]);
+        ctx.lineWidth = 2;
+        ctx.strokeStyle = 'rgba(251,191,36,0.85)';
+        ctx.stroke();
+        ctx.restore();
+        // 中心小圆点，强调「这个格子会被打到」
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, s * 0.10, 0, Math.PI * 2);
+        ctx.fillStyle = 'rgba(251,191,36,0.55)';
+        ctx.fill();
+        // 范围内有敌方棋子 → 画个红圈提示「能打到它」
+        var occ = g.occupant.get(k);
+        if (occ != null) {
+          var target = g.pieces.get(occ);
+          if (target && g.active != null && target.owner !== g.active) {
+            ctx.beginPath();
+            ctx.arc(p.x, p.y, s * 0.30, 0, Math.PI * 2);
+            ctx.lineWidth = 2;
+            ctx.strokeStyle = 'rgba(248,113,113,0.85)';
+            ctx.stroke();
+          }
+        }
+      });
+    }
+
     // 3.5 场上狙击兵的射线 + 指挥所光环
     g.pieces.forEach(function (p) {
       if (p.kind === 'sniper') self.drawSniperLine(p, 0.30);
@@ -209,33 +244,6 @@ window.Renderer = (function () {
       ctx.stroke();
       ctx.restore();
     }
-
-    // 4.2 可被替换的己方棋子：右上角画一个琥珀色双箭头
-    var swapCells = ui.replaceable || EMPTY;
-    if (selected && !g.over && swapCells.size) {
-      swapCells.forEach(function (k) {
-        var c = Hex.parse(k);
-        var pos = self.cellCenter(c.q, c.r);
-        ctx.save();
-        ctx.globalAlpha = 0.9;
-        ctx.beginPath();
-        ctx.arc(pos.x + s * 0.52, pos.y - s * 0.52, s * 0.19, 0, Math.PI * 2);
-        ctx.fillStyle = 'rgba(10,16,26,0.85)';
-        ctx.fill();
-        ctx.lineWidth = 1.2;
-        ctx.strokeStyle = 'rgba(251,191,36,0.9)';
-        ctx.stroke();
-        ctx.fillStyle = '#fbbf24';
-        ctx.font = '700 ' + (s * 0.22).toFixed(1) + 'px ' + FONT;
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'middle';
-        ctx.fillText('⇄', pos.x + s * 0.52, pos.y - s * 0.52);
-        ctx.restore();
-      });
-    }
-
-    // 4.5 待定方向（狙击兵刚点下落点时）
-    if (ui.pending) self.drawPendingDirection(ui.pending);
 
     // 5. 放置预览
     if (hover && selected && ui.canAfford && legal.has(hover.key) && !g.over) {

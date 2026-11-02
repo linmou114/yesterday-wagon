@@ -486,6 +486,22 @@
     return Math.max(1, v);
   };
 
+  // 假设在这个格子放一个该兵种，它能打到哪些格子（放置前预览用）
+  Game.prototype.attackCellsFrom = function (typeId, cellKey, dir) {
+    var t = this.types[typeId] || TYPES[typeId];
+    if (!t) return new Set();
+    if (!this.board.cells.has(cellKey)) return new Set();
+    var fake = {
+      owner: this.active,
+      kind: typeId,
+      key: cellKey,
+      atk: t.atk,
+      range: t.range,
+      dir: (dir == null ? 0 : dir)
+    };
+    return this.attackCells(fake);
+  };
+
   // 某个棋子能打到的格子集合
   Game.prototype.attackCells = function (piece) {
     var out = new Set();

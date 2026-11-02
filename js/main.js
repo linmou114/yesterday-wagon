@@ -61,8 +61,8 @@
         inspect: app.inspect,
         effects: app.effects,
         pending: app.pending,
-        replaceable: app.replaceable || EMPTY_SET,
         pendingReplace: app.pendingReplace || null,
+        previewCells: previewRange(),
         canAfford: !!g && selectedAffordable()
       };
     });
@@ -139,6 +139,20 @@
       toast('恢复对局失败，已回主菜单');
       return false;
     }
+  }
+  // 放置前的攻击范围预览：鼠标悬停在合法格上时，算出这个兵种放这里能打到哪
+  var EMPTY_PREVIEW = new Set();
+  function previewRange() {
+    var g = app.game;
+    if (!g || g.over || !app.selected || app.selected === '__slave') return EMPTY_PREVIEW;
+    if (app.pending || !app.hover) return EMPTY_PREVIEW;
+    if (!app.legal || !app.legal.has(app.hover.key)) return EMPTY_PREVIEW;
+    var t = typesOf()[app.selected];
+    if (!t) return EMPTY_PREVIEW;
+    if (t.rangeMode === 'none' || t.atk <= 0) return EMPTY_PREVIEW;
+    var dir = (t.rangeMode === 'line') ? defaultDir(app.hover.key) : null;
+    if (!g.attackCellsFrom) return EMPTY_PREVIEW;
+    return g.attackCellsFrom(app.selected, app.hover.key, dir);
   }
   function selectedAffordable() {
     var g = app.game;
