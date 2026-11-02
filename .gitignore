@@ -7,3 +7,4 @@ tools/_*.html
 tools/_*.js
 *.log
 *.zip
+data/

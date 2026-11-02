@@ -61,6 +61,7 @@
         inspect: app.inspect,
         effects: app.effects,
         pending: app.pending,
+        replaceable: app.replaceable || EMPTY_SET,
         canAfford: !!g && selectedAffordable()
       };
     });
@@ -160,6 +161,22 @@
   function clampNum(v, a, b, f) { return SET.clampNum(v, a, b, f); }
   function setPath(o, p, v) { return SET.setPath(o, p, v); }
   function getPath(o, p) { return SET.getPath(o, p); }
+  /* ---------------- 自建棋子接入 ---------------- */
+
+  // 内置数值 + 当前启用的自建兵种
+  function buildTypes() {
+    var t = {};
+    Object.keys(app.settings && app.settings.types || {}).forEach(function (k) {
+      t[k] = app.settings.types[k];
+    });
+    var MODS = window.MODS;
+    if (MODS && typeof MODS.enabledDefs === 'function') {
+      MODS.enabledDefs().forEach(function (d) {
+        if (d && d.id) t[d.id] = d;
+      });
+    }
+    return t;
+  }
   /* ---------------- 开局 ---------------- */
 
   function startGame(mode) {
@@ -176,7 +193,7 @@
       seed: map.seed,
       rng: rng,
       rules: rules,
-      types: app.settings.types
+      types: buildTypes()
     });
     app.mapLabel = map.label;
 
@@ -226,6 +243,9 @@
     var g = app.game;
     if (!g) return;
     app.legal = g.over ? new Set() : g.legalCells(g.active);
+    app.replaceable = (g.over || !isMyTurn() || !g.replaceableCells)
+      ? EMPTY_SET
+      : g.replaceableCells(g.active);
     app.showLegal = isMyTurn();
     app.legalShown = app.showLegal ? app.legal : EMPTY_SET;
     renderPanels();
@@ -259,12 +279,13 @@
 
       // 兵种编成（按兵种表动态生成，新兵种自动出现）
       var counts = {};
-      ENGINE.ALL_TYPE_LIST.forEach(function (id) { counts[id] = 0; });
+      var allIds = (g.allTypeList && g.allTypeList.length) ? g.allTypeList : ENGINE.ALL_TYPE_LIST;
+      allIds.forEach(function (id) { counts[id] = 0; });
       g.pieces.forEach(function (p) {
         if (p.owner === i && counts[p.kind] != null) counts[p.kind] += 1;
       });
       var comp = '<div class="comp">';
-      ENGINE.ALL_TYPE_LIST.forEach(function (id) {
+      allIds.forEach(function (id) {
         var t = typesOf()[id] || ENGINE.TYPES[id];
         var show = (id === 'slave') ? counts[id] > 0 : true;   // 没奴隶就不显示
         if (!show) return;
@@ -299,7 +320,8 @@
     var g = app.game;
     var html = '';
     var only = (app.mode === 'tutorial' && app.tutTypes) ? app.tutTypes : null;
-    var list = ENGINE.TYPE_LIST.filter(function (id) { return !only || only.indexOf(id) >= 0; });
+    var allIds = (g.typeList && g.typeList.length) ? g.typeList : ENGINE.TYPE_LIST;
+    var list = allIds.filter(function (id) { return !only || only.indexOf(id) >= 0; });
     list.forEach(function (id, idx) {
       var t = typesOf()[id];
       var afford = g.energy >= t.cost && !g.over;
@@ -373,13 +395,22 @@
     var t = isBase
       ? { glyph: '基', name: '大本营', desc: '血量 4。被敌方攻击合计满 4 点就会被摧毁。' }
       : typesOf()[p.kind];
+    var sel = typesOf()[app.selected];
+    var canSwap = !isBase && !g.over && p.owner === g.active && isMyTurn() &&
+      sel && sel.id !== p.kind &&
+      (app.selected !== '__slave' ? (g.energy >= sel.cost) : true);
+
     el.innerHTML =
       '<div class="ic-row">' +
         '<span class="ic-glyph" style="color:' + g.players[p.owner].color + '">' + t.glyph + '</span>' +
         '<span class="ic-who"><b>' + g.players[p.owner].name + ' · ' + t.name + '</b>' +
         '<em>' + (isBase ? '基地' : ('血量 ' + p.hp + ' · 攻击 ' + p.atk + ' · 射程 ' + p.range)) + '</em></span>' +
       '</div>' +
-      '<p class="ic-desc">' + (t.desc || '') + '</p>';
+      '<p class="ic-desc">' + (t.desc || '') + '</p>' +
+      (canSwap
+        ? '<button type="button" class="ic-swap" data-swap="' + p.key + '">⇄ 用「' +
+          (app.selected === '__slave' ? '奴隶' : sel.name) + '」替换它</button>'
+        : '');
     el.classList.add('show');
   }
 
@@ -549,6 +580,53 @@
     refresh();
   }
 
+  // 用当前选中的兵种替换掉自己某个棋子
+  function replaceOwn(cellKey) {
+    var g = app.game;
+    if (!g || g.over) return;
+    if (!isMyTurn()) { toast('还没轮到你'); return; }
+
+    var isSlave = app.selected === '__slave';
+    var t = isSlave ? (typesOf().slave || ENGINE.TYPES.slave) : typesOf()[app.selected];
+    if (!t) { toast('先在下面选一个兵种'); return; }
+    if (isSlave && (!g.freeSlavesLeft || g.freeSlavesLeft(g.active) <= 0)) {
+      toast('本回合没有可召唤的奴隶了');
+      return;
+    }
+
+    var opts = (t.rangeMode === 'line') ? { dir: defaultDir(cellKey) } : {};
+    var chk = g.canPlace(g.active, t.id || app.selected, cellKey, opts);
+    if (!chk.ok) { toast(chk.msg); return; }
+
+    // 狙击兵：先选方向
+    if (t.rangeMode === 'line') {
+      app.pending = {
+        cell: cellKey, type: t.id || app.selected,
+        dir: opts.dir, len: t.range, owner: g.active
+      };
+      app.inspect = null;
+      toast('选择狙击方向，再点一下确认替换');
+      refresh();
+      return;
+    }
+
+    if (app.mode === 'online') {
+      if (isSlave) Net.act({ kind: 'slave', cell: cellKey });
+      else Net.act({ kind: 'place', type: app.selected, cell: cellKey });
+      return;
+    }
+
+    try {
+      if (isSlave) g.placeSlave(g.active, cellKey);
+      else g.place(g.active, app.selected, cellKey);
+    } catch (e) { toast(e.message); return; }
+
+    var old = (g.history[g.history.length - 1] || {}).replacedKind;
+    var oldName = old && typesOf()[old] ? typesOf()[old].name : '';
+    addLog(g.players[g.active].name + ' 用 ' + t.name + ' 替换了 ' + (oldName || '棋子'), 'place');
+    app.inspect = null;
+    refresh();
+  }
   function doResolve() {
     var g = app.game;
     if (!g || g.over) return;
@@ -1274,6 +1352,7 @@
         side: mp.side,
         density: mp.density,
         seed: mp.seed,
+        modIds: (window.MODS && window.MODS.enabledIds) ? window.MODS.enabledIds() : [],
         lastBonus: st.lastBonus,
         rules: { firstPlayer: st.firstPlayer, energyPerTurn: st.energy, baseHp: st.baseHp },
         types: st.types
@@ -1386,6 +1465,14 @@
       app.hover = cell;
       updateInspectCard();
     });
+
+    if (els.inspectCard) {
+      els.inspectCard.addEventListener('click', function (e) {
+        var btn = e.target.closest ? e.target.closest('[data-swap]') : null;
+        if (!btn) return;
+        replaceOwn(btn.getAttribute('data-swap'));
+      });
+    }
 
     els.canvas.addEventListener('pointerleave', function () {
       app.hover = null;

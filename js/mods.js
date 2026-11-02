@@ -1,0 +1,183 @@
+/* =========================================================
+ * mods.js —— 自建兵种（mod）的公共逻辑
+ *
+ *   · 定义校验与归一化
+ *   · 本地「我的兵种」（localStorage）
+ *   · 与服务器 /api/mods 通信
+ *
+ *   菜单页与对局页都会加载它。
+ * ========================================================= */
+(function (root) {
+  'use strict';
+
+  var STORE_KEY = 'yesterday-bus.mods.v1';   // 我发布/收藏过的定义 + secret
+  var PICK_KEY = 'yesterday-bus.modpick.v1'; // 启用了哪些
+
+  var MAX_NAME = 10;
+  var MAX_DESC = 120;
+  var MAX_MODS = 8;                          // 一局最多带几个
+
+  function clamp(v, min, max, fb) {
+    var n = Number(v);
+    if (!isFinite(n)) return fb;
+    return Math.min(max, Math.max(min, Math.round(n)));
+  }
+
+  // 把任意输入洗成安全、完整的兵种定义
+  function normalize(raw) {
+    raw = raw || {};
+    var name = String(raw.name || '').trim().slice(0, MAX_NAME);
+    var mode = raw.rangeMode === 'line' ? 'line' : (raw.rangeMode === 'none' ? 'none' : 'circle');
+    var out = {
+      name: name,
+      glyph: String(raw.glyph || name.charAt(0) || '兵').slice(0, 2),
+      hp: clamp(raw.hp, 1, 30, 3),
+      atk: clamp(raw.atk, 0, 20, 1),
+      range: clamp(raw.range, 0, 6, 1),
+      cost: clamp(raw.cost, 0, 30, 2),
+      rangeMode: mode,
+      aura: !!raw.aura,
+      desc: String(raw.desc || '').slice(0, MAX_DESC)
+    };
+    if (mode === 'none') out.range = 0;
+    if (out.atk <= 0) out.range = 0;
+    if (raw.id) out.id = String(raw.id);
+    return out;
+  }
+
+  function validate(raw) {
+    var n = normalize(raw);
+    if (!n.name) return { ok: false, msg: '请先给棋子起个名字' };
+    if (n.rangeMode !== 'none' && n.atk > 0 && n.range <= 0) {
+      return { ok: false, msg: '攻击力大于 0 时射程至少为 1（或把攻击力设为 0）' };
+    }
+    return { ok: true, mod: n, msg: '' };
+  }
+
+  /* ---------------- 本地存储 ---------------- */
+
+  function readJson(key, fb) {
+    try {
+      var raw = root.localStorage.getItem(key);
+      if (!raw) return fb;
+      var v = JSON.parse(raw);
+      return v == null ? fb : v;
+    } catch (e) { return fb; }
+  }
+
+  function writeJson(key, v) {
+    try { root.localStorage.setItem(key, JSON.stringify(v)); } catch (e) {}
+  }
+
+  // 我保存过的定义：{ [id]: {def..., secret?} }
+  function myMods() { return readJson(STORE_KEY, {}); }
+
+  function saveMine(def, secret) {
+    var all = myMods();
+    var id = def.id || ('local_' + Date.now().toString(36));
+    all[id] = Object.assign({}, normalize(def), { id: id, savedAt: Date.now() });
+    if (secret) all[id].secret = secret;
+    writeJson(STORE_KEY, all);
+    return id;
+  }
+
+  function removeMine(id) {
+    var all = myMods();
+    delete all[id];
+    writeJson(STORE_KEY, all);
+    var pick = picks();
+    delete pick[id];
+    writeJson(PICK_KEY, pick);
+  }
+
+  // 启用了哪些（按 id）
+  function picks() { return readJson(PICK_KEY, {}); }
+
+  function setPick(id, on) {
+    var p = picks();
+    if (on) p[id] = true; else delete p[id];
+    var ids = Object.keys(p);
+    while (ids.length > MAX_MODS) { delete p[ids.pop()]; }
+    writeJson(PICK_KEY, p);
+  }
+
+  // 当前启用的定义（本地 + 服务器缓存）
+  function enabledDefs() {
+    var mine = myMods();
+    var p = picks();
+    var out = [];
+    Object.keys(p).forEach(function (id) {
+      if (mine[id]) out.push(normalize(Object.assign({}, mine[id], { id: id })));
+    });
+    return out.slice(0, MAX_MODS);
+  }
+
+  function enabledIds() {
+    return enabledDefs().map(function (d) { return d.id; });
+  }
+
+  /* ---------------- 服务器通信 ---------------- */
+
+  function apiUrl(pathname) {
+    if (typeof location === 'undefined') return '';
+    if (location.protocol === 'file:') return '';
+    return location.origin + pathname;
+  }
+
+  function listRemote() {
+    var url = apiUrl('/api/mods');
+    if (!url) return Promise.resolve([]);
+    return fetch(url, { cache: 'no-store' })
+      .then(function (r) { return r.ok ? r.json() : { mods: [] }; })
+      .then(function (j) { return (j && j.mods) || []; })
+      .catch(function () { return []; });
+  }
+
+  function publish(def) {
+    var url = apiUrl('/api/mods');
+    if (!url) return Promise.reject(new Error('这个页面不是从服务器打开的，无法上传'));
+    var body = JSON.stringify({ mod: normalize(def) });
+    return fetch(url, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: body
+    }).then(function (r) {
+      return r.json().then(function (j) {
+        if (!r.ok) throw new Error((j && j.error) || '上传失败');
+        return j;      // { mod, secret }
+      });
+    });
+  }
+
+  function removeRemote(id, secret) {
+    var url = apiUrl('/api/mods/' + encodeURIComponent(id));
+    if (!url) return Promise.reject(new Error('离线状态'));
+    return fetch(url, {
+      method: 'DELETE',
+      headers: { 'x-mod-secret': secret || '' }
+    }).then(function (r) {
+      return r.json().then(function (j) {
+        if (!r.ok) throw new Error((j && j.error) || '删除失败');
+        return j;
+      });
+    });
+  }
+
+  root.MODS = {
+    MAX_NAME: MAX_NAME,
+    MAX_DESC: MAX_DESC,
+    MAX_MODS: MAX_MODS,
+    normalize: normalize,
+    validate: validate,
+    myMods: myMods,
+    saveMine: saveMine,
+    removeMine: removeMine,
+    picks: picks,
+    setPick: setPick,
+    enabledDefs: enabledDefs,
+    enabledIds: enabledIds,
+    listRemote: listRemote,
+    publish: publish,
+    removeRemote: removeRemote
+  };
+})(typeof globalThis !== 'undefined' ? globalThis : this);

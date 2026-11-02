@@ -167,9 +167,100 @@
       <p class="set-note">血量 ≤ 攻击合计 就会被结算打死；费用最低 1 点，射程 0 表示不能攻击。</p>
     </div>
 
+    <div class="set-group">
+      <h3>自建棋子（MOD）</h3>
+      <p class="set-note">可以自己设计棋子并上传，勾选的棋子会出现在这一局的商店里（最多 8 个）。</p>
+      <div class="mod-list" id="modList"></div>
+      <div class="mod-actions">
+        <button class="btn small" id="btnOpenModEditor" type="button">＋ 新建棋子</button>
+        <button class="btn ghost small" id="btnRefreshMods" type="button">刷新服务器列表</button>
+      </div>
+    </div>
+
     <div class="modal-actions">
       <button class="btn ghost" id="btnSetReset" type="button">恢复默认</button>
       <button class="btn primary" id="btnSetDone" type="button">完成</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============ 自建棋子编辑器 ============ -->
+<div class="overlay hidden" id="ovModEditor">
+  <div class="modal wide">
+    <h1 class="modal-title" style="font-size:22px">新建棋子</h1>
+    <p class="modal-sub">设定好后可以保存在本地，也可以上传到服务器给其他人用</p>
+
+    <div class="mod-editor">
+      <div class="mod-form">
+        <div class="set-group">
+          <h3>基本信息</h3>
+          <div class="set-row">
+            <label for="modName">名称</label>
+            <input id="modName" class="text" type="text" maxlength="10" placeholder="例如：石头人" />
+          </div>
+          <div class="set-row">
+            <label for="modGlyph">图标</label>
+            <input id="modGlyph" class="num" type="text" maxlength="1" placeholder="一" />
+            <span class="unit">棋盘上显示的单字</span>
+          </div>
+          <div class="set-row">
+            <label for="modDesc">简介</label>
+            <input id="modDesc" class="text" type="text" maxlength="120" placeholder="一句话说明它的定位" />
+          </div>
+        </div>
+
+        <div class="set-group">
+          <h3>数值</h3>
+          <div class="set-row">
+            <label for="modHp">血量</label>
+            <input id="modHp" class="num" type="number" min="1" max="30" step="1" value="3" />
+            <span class="unit">点</span>
+          </div>
+          <div class="set-row">
+            <label for="modAtk">攻击力</label>
+            <input id="modAtk" class="num" type="number" min="0" max="20" step="1" value="1" />
+            <span class="unit">点</span>
+          </div>
+          <div class="set-row">
+            <label for="modRange">射程</label>
+            <input id="modRange" class="num" type="number" min="0" max="6" step="1" value="1" />
+            <span class="unit">格</span>
+          </div>
+          <div class="set-row">
+            <label for="modCost">费用</label>
+            <input id="modCost" class="num" type="number" min="0" max="30" step="1" value="2" />
+            <span class="unit">点</span>
+          </div>
+        </div>
+
+        <div class="set-group">
+          <h3>特性</h3>
+          <div class="set-row stack">
+            <label>攻击方式</label>
+            <div class="seg" id="modMode">
+              <button type="button" data-m="circle">周围一圈</button>
+              <button type="button" data-m="line">一条直线</button>
+              <button type="button" data-m="none">不能攻击</button>
+            </div>
+          </div>
+          <label class="mod-check">
+            <input id="modAura" type="checkbox" />
+            <span>光环：相邻的己方棋子攻击力 +1</span>
+          </label>
+        </div>
+      </div>
+
+      <div class="mod-preview">
+        <div class="mod-preview-title">预览</div>
+        <div class="mod-card-preview" id="modPreview"></div>
+        <p class="mod-tip" id="modTip"></p>
+      </div>
+    </div>
+
+    <div class="modal-actions">
+      <button class="btn ghost" id="btnModCancel" type="button">取消</button>
+      <button class="btn" id="btnModSaveLocal" type="button">保存到本地</button>
+      <button class="btn primary" id="btnModUpload" type="button">保存并上传</button>
     </div>
   </div>
 </div>
@@ -188,6 +279,7 @@
 <script src="js/hex.js"></script>
 <script src="js/engine.js"></script>
 <script src="js/maps.js"></script>
+<script src="js/mods.js"></script>
 <script src="js/settings.js"></script>
 <script src="js/rules.js"></script>
 <script src="js/menu.js"></script>

@@ -66,6 +66,73 @@ const server = http.createServer((req, res) => {
     });
     return res.end(JSON.stringify({ rooms: playing, waiting, players }));
   }
+  // ---- 自建兵种 API ----
+  if (pathname === '/api/mods' && req.method === 'GET') {
+    const list = Array.from(modStore.values())
+      .sort((a, b) => (b.at || 0) - (a.at || 0))
+      .map((m) => {
+        const pub = Object.assign({}, m);
+        delete pub.secret;          // 只有作者自己知道 secret
+        return pub;
+      });
+    res.writeHead(200, {
+      'content-type': 'application/json; charset=utf-8',
+      'cache-control': 'no-store',
+      'access-control-allow-origin': '*'
+    });
+    return res.end(JSON.stringify({ mods: list }));
+  }
+
+  if (pathname === '/api/mods' && req.method === 'POST') {
+    let body = '';
+    let tooBig = false;
+    req.on('data', (chunk) => {
+      body += chunk;
+      if (body.length > 8192) { tooBig = true; req.destroy(); }
+    });
+    req.on('end', () => {
+      if (tooBig) {
+        res.writeHead(413, { 'content-type': 'application/json; charset=utf-8' });
+        return res.end(JSON.stringify({ error: '内容太大' }));
+      }
+      let data = null;
+      try { data = JSON.parse(body || '{}'); } catch (e) { data = null; }
+      const clean = data && cleanMod(data.mod || data);
+      if (!clean) {
+        res.writeHead(400, { 'content-type': 'application/json; charset=utf-8' });
+        return res.end(JSON.stringify({ error: '兵种数据不合法（至少要有名称）' }));
+      }
+      if (modStore.size >= MOD_MAX) {
+        res.writeHead(409, { 'content-type': 'application/json; charset=utf-8' });
+        return res.end(JSON.stringify({ error: '自建兵种数量已达上限 ' + MOD_MAX }));
+      }
+      const id = 'mod_' + crypto.randomBytes(5).toString('hex');
+      const secret = crypto.randomBytes(12).toString('hex');
+      const mod = Object.assign({ id, secret, at: Date.now(), author: String(data.author || '').slice(0, 16) }, clean);
+      modStore.set(id, mod);
+      saveMods();
+      const pub = Object.assign({}, mod);
+      delete pub.secret;
+      res.writeHead(200, { 'content-type': 'application/json; charset=utf-8' });
+      return res.end(JSON.stringify({ mod: pub, secret }));
+    });
+    return;
+  }
+
+  if (pathname.indexOf('/api/mods/') === 0 && req.method === 'DELETE') {
+    const id = pathname.slice('/api/mods/'.length);
+    const m = modStore.get(id);
+    const secret = String(req.headers['x-mod-secret'] || '');
+    if (!m || !secret || secret !== m.secret) {
+      res.writeHead(403, { 'content-type': 'application/json; charset=utf-8' });
+      return res.end(JSON.stringify({ error: '没有权限删除这个兵种' }));
+    }
+    modStore.delete(id);
+    saveMods();
+    res.writeHead(200, { 'content-type': 'application/json; charset=utf-8' });
+    return res.end(JSON.stringify({ ok: true }));
+  }
+
   if (pathname === '/') pathname = '/index.html';
 
   const file = path.normalize(path.join(ROOT, pathname));
@@ -90,6 +157,66 @@ const server = http.createServer((req, res) => {
 /* ---------------- 房间 ---------------- */
 
 const rooms = new Map();          // code -> room
+/* ---------------- 自建兵种（mod）存储 ---------------- */
+
+const MOD_FILE = path.join(__dirname, '..', 'data', 'mods.json');
+const MOD_MAX = 200;
+
+const modStore = new Map();
+
+function loadMods() {
+  try {
+    const raw = fs.readFileSync(MOD_FILE, 'utf8');
+    const list = JSON.parse(raw);
+    if (Array.isArray(list)) {
+      list.forEach((m) => { if (m && m.id) modStore.set(m.id, m); });
+    }
+  } catch (e) { /* 文件不存在就当作空库 */ }
+}
+
+let modSaveTimer = null;
+function saveMods() {
+  if (modSaveTimer) return;
+  modSaveTimer = setTimeout(() => {
+    modSaveTimer = null;
+    try {
+      fs.mkdirSync(path.dirname(MOD_FILE), { recursive: true });
+      fs.writeFileSync(MOD_FILE, JSON.stringify(Array.from(modStore.values()), null, 2));
+    } catch (e) {
+      console.error('保存自建兵种失败:', e.message);
+    }
+  }, 300);
+}
+
+function modNum(v, min, max, fallback) {
+  const n = Number(v);
+  if (!isFinite(n)) return fallback;
+  return Math.min(max, Math.max(min, Math.round(n)));
+}
+
+// 把客户端提交的定义洗成安全数据
+function cleanMod(raw) {
+  if (!raw || typeof raw !== 'object') return null;
+  const name = String(raw.name || '').trim().slice(0, 10);
+  if (!name) return null;
+  const mode = raw.rangeMode === 'line' ? 'line' : (raw.rangeMode === 'none' ? 'none' : 'circle');
+  const out = {
+    name,
+    glyph: String(raw.glyph || name.charAt(0)).slice(0, 2),
+    hp: modNum(raw.hp, 1, 30, 3),
+    atk: modNum(raw.atk, 0, 20, 1),
+    range: modNum(raw.range, 0, 6, 1),
+    cost: modNum(raw.cost, 0, 30, 2),
+    rangeMode: mode,
+    aura: !!raw.aura,
+    desc: String(raw.desc || '').slice(0, 120)
+  };
+  if (out.rangeMode === 'none') out.range = 0;
+  if (out.atk <= 0) out.range = 0;
+  return out;
+}
+
+loadMods();
 const ROOM_TTL = 3 * 60 * 60 * 1000;   // 3 小时没动静就清理
 const EMPTY_TTL = 10 * 60 * 1000;      // 对局没打完、所有人都离线：保留 10 分钟等重连
 const OVER_TTL = 60 * 1000;            // 对局已结束、所有人都离线：1 分钟后删
@@ -120,16 +247,34 @@ function sanitizeSettings(raw) {
   rules.firstTurnEnergy[1 - rules.firstPlayer] = rules.energyPerTurn + bonus;
 
   const types = {};
-  ['infantry', 'tank', 'artillery'].forEach((id) => {
+  (ENGINE.ALL_TYPE_LIST || ENGINE.TYPE_LIST).forEach((id) => {
     const t = (s.types && s.types[id]) || {};
     const def = ENGINE.TYPES[id];
     types[id] = {
       hp: clamp(t.hp, 1, 30, def.hp),
       atk: clamp(t.atk, 0, 20, def.atk),
       range: clamp(t.range, 0, 6, def.range),
-      cost: clamp(t.cost, 1, 30, def.cost)
+      cost: clamp(t.cost, 0, 30, def.cost)
     };
   });
+
+  // 自建兵种只认服务器上已发布的 id
+  const modIds = [];
+  if (Array.isArray(s.modIds)) {
+    s.modIds.slice(0, 8).forEach((raw) => {
+      const id = String(raw || '');
+      if (!/^mod_[a-z0-9]{4,16}$/.test(id)) return;
+      if (modIds.indexOf(id) >= 0) return;
+      const m = modStore.get(id);
+      if (!m) return;
+      modIds.push(id);
+      types[id] = {
+        name: m.name, glyph: m.glyph, hp: m.hp, atk: m.atk,
+        range: m.range, cost: m.cost, rangeMode: m.rangeMode,
+        aura: m.aura, desc: m.desc
+      };
+    });
+  }
 
   const seed = Number(s.seed);
   return {
@@ -137,7 +282,8 @@ function sanitizeSettings(raw) {
     density: clamp(s.density, 0, 0.4, 0.14),
     seed: isFinite(seed) && seed > 0 ? (seed >>> 0) : null,
     rules,
-    types
+    types,
+    modIds
   };
 }
 

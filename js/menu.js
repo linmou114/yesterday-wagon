@@ -288,9 +288,163 @@
 
   function openSettings() {
     syncSettingsForm();
+    renderModList();
     show('ovSettings');
   }
 
+  /* ---------------- 自建棋子（MOD） ---------------- */
+
+  var MODS = window.MODS;
+  var remoteMods = [];
+  var editorDraft = null;
+
+  function statLine(m) {
+    var rangeTxt = (m.rangeMode === 'line') ? ('直线 ' + m.range) : ('射 ' + m.range);
+    if (m.rangeMode === 'none') rangeTxt = '不攻击';
+    var extra = m.aura ? ' · 光环' : '';
+    return '血 ' + m.hp + ' · 攻 ' + m.atk + ' · ' + rangeTxt + ' · ' + m.cost + ' 费' + extra;
+  }
+
+  function allAvailableMods() {
+    // 本地保存的 + 服务器上的，按 id 合并（本地优先）
+    var mine = MODS.myMods();
+    var map = {};
+    remoteMods.forEach(function (m) { if (m && m.id) map[m.id] = Object.assign({}, m, { mine: false }); });
+    Object.keys(mine).forEach(function (id) {
+      map[id] = Object.assign({}, mine[id], { id: id, mine: true });
+    });
+    return Object.keys(map).map(function (id) {
+      var m = map[id];
+      return Object.assign(MODS.normalize(m), { id: id, mine: !!m.mine, secret: m.secret, remote: !!m.remote });
+    }).sort(function (a, b) {
+      if (a.mine !== b.mine) return a.mine ? -1 : 1;
+      return (a.name || '').localeCompare(b.name || '');
+    });
+  }
+
+  function renderModList() {
+    var host = $('modList');
+    if (!host) return;
+    var list = allAvailableMods();
+    var picks = MODS.picks();
+    if (!list.length) {
+      host.innerHTML = '<p class="mod-empty">还没有自建棋子。点下面「＋ 新建棋子」设计一个吧。</p>';
+      return;
+    }
+    var html = '';
+    list.forEach(function (m) {
+      var on = !!picks[m.id];
+      html += '<label class="mod-item' + (on ? ' on' : '') + '">' +
+        '<input type="checkbox" data-mod="' + m.id + '"' + (on ? ' checked' : '') + ' />' +
+        '<span class="mi-glyph">' + m.glyph + '</span>' +
+        '<span class="mi-main">' +
+        '<span class="mi-name">' + m.name + '</span>' +
+        '<span class="mi-stat">' + statLine(m) + '</span>' +
+        '</span>' +
+        (m.mine ? '<span class="mi-tag mine">我的</span>' : '<span class="mi-tag">服务器</span>') +
+        (m.mine ? '<button type="button" class="mi-del" data-del="' + m.id + '" title="删除">✕</button>' : '') +
+        '</label>';
+    });
+    host.innerHTML = html;
+  }
+
+  function refreshRemoteMods() {
+    if (!MODS) return;
+    return MODS.listRemote().then(function (list) {
+      remoteMods = (list || []).map(function (m) { return Object.assign({}, m, { remote: true }); });
+      renderModList();
+    });
+  }
+
+  /* ---------------- 编辑器 ---------------- */
+
+  function readEditor() {
+    var modeBtn = $('modMode').querySelector('button.on');
+    return MODS.normalize({
+      name: $('modName').value,
+      glyph: $('modGlyph').value,
+      desc: $('modDesc').value,
+      hp: $('modHp').value,
+      atk: $('modAtk').value,
+      range: $('modRange').value,
+      cost: $('modCost').value,
+      rangeMode: modeBtn ? modeBtn.getAttribute('data-m') : 'circle',
+      aura: $('modAura').checked
+    });
+  }
+
+  function paintEditor() {
+    var m = readEditor();
+    var rangeTxt = (m.rangeMode === 'line') ? ('直线 ' + m.range) : ('射 ' + m.range);
+    if (m.rangeMode === 'none') rangeTxt = '不攻击';
+    $('modPreview').innerHTML =
+      '<button type="button" class="card" data-type="__preview">' +
+      '<span class="card-key">M</span>' +
+      '<span class="card-name">' + (m.name || '未命名') + '</span>' +
+      '<span class="card-cost">' + m.cost + ' 费</span>' +
+      '<span class="card-line">血 ' + m.hp + ' · 攻 ' + m.atk + ' · ' + rangeTxt + '</span>' +
+      '</button>';
+
+    var tips = [];
+    if (m.aura) tips.push('光环：相邻己方 +1 攻（自身不攻击时也能起作用）');
+    if (m.rangeMode === 'line') tips.push('部署时要选方向，只打该方向的直线');
+    if (m.atk <= 0) tips.push('攻击力 0 → 只能当光环或肉盾');
+    if (m.cost === 0) tips.push('费用 0 → 每回合可以免费铺，注意别太强');
+    $('modTip').textContent = tips.join('；') || '普通棋子：射程内所有敌人都能打到。';
+  }
+
+  function openEditor(def) {
+    editorDraft = def || null;
+    var d = def ? MODS.normalize(def) : MODS.normalize({ hp: 3, atk: 1, range: 1, cost: 2 });
+    $('modName').value = d.name || '';
+    $('modGlyph').value = d.glyph || '';
+    $('modDesc').value = d.desc || '';
+    $('modHp').value = d.hp;
+    $('modAtk').value = d.atk;
+    $('modRange').value = d.range;
+    $('modCost').value = d.cost;
+    $('modAura').checked = !!d.aura;
+    Array.prototype.forEach.call($('modMode').querySelectorAll('button'), function (b) {
+      b.classList.toggle('on', b.getAttribute('data-m') === d.rangeMode);
+    });
+    paintEditor();
+    show('ovModEditor');
+  }
+
+  function saveEditor(upload) {
+    var v = MODS.validate(readEditor());
+    if (!v.ok) { flash(v.msg); return; }
+    var def = v.mod;
+
+    var id = MODS.saveMine(def, editorDraft && editorDraft.secret);
+    MODS.setPick(id, true);
+    renderModList();
+    if (window.SET) {
+      // 让对局页也知道启用了哪些
+      var st = SET.load();
+      SET.save(st);
+    }
+
+    if (!upload) {
+      hide('ovModEditor');
+      flash('已保存到本地：' + def.name);
+      return;
+    }
+
+    MODS.publish(def).then(function (res) {
+      var rid = res.mod.id;
+      MODS.removeMine(id);
+      MODS.saveMine(res.mod, res.secret);
+      MODS.setPick(rid, true);
+      MODS.setPick(id, false);
+      refreshRemoteMods();
+      renderModList();
+      hide('ovModEditor');
+      flash('已上传到服务器：' + res.mod.name);
+    }).catch(function (err) {
+      flash('上传失败：' + err.message + '（已保存在本地）');
+    });
+  }
   /* ---------------- 弹层 ---------------- */
 
   function show(id) { var el = $(id); if (el) el.classList.remove('hidden'); }
@@ -357,6 +511,60 @@
       flash('已恢复默认设置');
     });
 
+    // 自建棋子
+    $('btnOpenModEditor').addEventListener('click', function () { openEditor(null); });
+    $('btnRefreshMods').addEventListener('click', function () {
+      flash('正在刷新服务器列表…');
+      refreshRemoteMods().then(function () { flash('服务器列表已刷新'); });
+    });
+    $('btnModCancel').addEventListener('click', function () { hide('ovModEditor'); });
+    $('btnModSaveLocal').addEventListener('click', function () { saveEditor(false); });
+    $('btnModUpload').addEventListener('click', function () { saveEditor(true); });
+
+    $('modMode').addEventListener('click', function (e) {
+      var b = e.target.closest ? e.target.closest('button') : null;
+      if (!b) return;
+      Array.prototype.forEach.call($('modMode').querySelectorAll('button'), function (x) {
+        x.classList.toggle('on', x === b);
+      });
+      paintEditor();
+    });
+
+    ['modName', 'modGlyph', 'modDesc', 'modHp', 'modAtk', 'modRange', 'modCost', 'modAura'].forEach(function (id) {
+      var el = $(id);
+      if (!el) return;
+      el.addEventListener('input', paintEditor);
+      el.addEventListener('change', paintEditor);
+    });
+
+    $('modList').addEventListener('click', function (e) {
+      var del = e.target.closest ? e.target.closest('[data-del]') : null;
+      if (del) {
+        e.preventDefault();
+        var id = del.getAttribute('data-del');
+        var mine = MODS.myMods()[id];
+        if (!mine) return;
+        var doDelete = function () {
+          MODS.removeMine(id);
+          renderModList();
+          flash('已删除（本地）');
+        };
+        if (mine.secret && mine.id && /^mod_/.test(mine.id)) {
+          MODS.removeRemote(mine.id, mine.secret)
+            .then(function () { doDelete(); flash('已从服务器删除'); })
+            .catch(function (err) { doDelete(); flash('本地已删除，服务器删除失败：' + err.message); });
+        } else {
+          doDelete();
+        }
+        return;
+      }
+      var box = e.target;
+      if (box && box.getAttribute && box.getAttribute('data-mod')) {
+        MODS.setPick(box.getAttribute('data-mod'), box.checked);
+        renderModList();
+      }
+    });
+
     $('btnSetDone').addEventListener('click', function () {
       SET.sanitize(settings);
       SET.save(settings);
@@ -400,6 +608,9 @@
         if (last && /^\d{4}$/.test(last)) $('menuCode').value = last;
       } catch (e) {}
     }
+
+    renderModList();
+    refreshRemoteMods();
 
     checkServer();
     setInterval(refreshStats, 15000);

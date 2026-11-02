@@ -197,6 +197,30 @@ window.Renderer = (function () {
     // 4. 棋子
     g.pieces.forEach(function (p) { self.drawPiece(p, 1); });
 
+    // 4.2 可被替换的己方棋子：右上角画一个琥珀色双箭头
+    var swapCells = ui.replaceable || EMPTY;
+    if (selected && !g.over && swapCells.size) {
+      swapCells.forEach(function (k) {
+        var c = Hex.parse(k);
+        var pos = self.cellCenter(c.q, c.r);
+        ctx.save();
+        ctx.globalAlpha = 0.9;
+        ctx.beginPath();
+        ctx.arc(pos.x + s * 0.52, pos.y - s * 0.52, s * 0.19, 0, Math.PI * 2);
+        ctx.fillStyle = 'rgba(10,16,26,0.85)';
+        ctx.fill();
+        ctx.lineWidth = 1.2;
+        ctx.strokeStyle = 'rgba(251,191,36,0.9)';
+        ctx.stroke();
+        ctx.fillStyle = '#fbbf24';
+        ctx.font = '700 ' + (s * 0.22).toFixed(1) + 'px ' + FONT;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText('⇄', pos.x + s * 0.52, pos.y - s * 0.52);
+        ctx.restore();
+      });
+    }
+
     // 4.5 待定方向（狙击兵刚点下落点时）
     if (ui.pending) self.drawPendingDirection(ui.pending);
 
@@ -371,7 +395,7 @@ window.Renderer = (function () {
     var ctx = this.ctx;
     var s = this.hexSize;
     var col = this.game.players[p.owner].color;
-    var t = ENGINE.TYPES[p.kind];
+    var t = (this.game.types && this.game.types[p.kind]) || ENGINE.TYPES[p.kind];
     if (!t) return;
     ctx.save();
     ctx.globalAlpha = alpha == null ? 1 : alpha;

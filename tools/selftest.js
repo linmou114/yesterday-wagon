@@ -516,6 +516,54 @@ console.log('== 10. 新兵种：指挥所 / 狙击兵 / 奴隶主 ==');
     eq(back.slavesUsed[1], 1, '序列化：奴隶配额保留');
   }
 }
+console.log('== 11. 棋子替换 ==');
+{
+  const g = new ENGINE.Game({
+    side: 4, density: 0, seed: 51,
+    rules: { baseHp: 4, energyPerTurn: 6, firstPlayer: 1, firstTurnEnergy: [6, 6] }
+  });
+  clearBoard(g);
+  force(g, 1, 'infantry', 0, 2);
+
+  // 空格 → 己方棋子
+  const tankCell = '0,2';
+  eq(g.canPlace(1, 'tank', tankCell).ok, true, '替换：己方棋子所在格可以放新棋子');
+  const energy0 = g.energy;
+  const size0 = g.pieces.size;
+  g.place(1, 'tank', tankCell);
+  const now = g.pieces.get(g.occupant.get(tankCell));
+  eq(now.kind, 'tank', '替换：格子上变成了坦克');
+  eq(g.pieces.size, size0, '替换：棋子总数不变');
+  eq(g.energy, energy0 - 2, '替换：只扣新棋子的费用');
+  eq(g.kills[0] + g.kills[1], 0, '替换：不计入击杀');
+  eq(g.history[g.history.length - 1].replacedKind, 'infantry', '替换：战报记录了被替换的兵种');
+
+  // 同类替换被拒绝
+  const same = g.canPlace(1, 'tank', tankCell);
+  ok(!same.ok, '替换：同兵种原地替换会被拒绝');
+
+  // 大本营不可替换
+  const base = [...g.pieces.values()].find((p) => p.owner === 1 && p.kind === 'base');
+  const onBase = g.canPlace(1, 'infantry', base.key);
+  ok(!onBase.ok && /大本营/.test(onBase.msg), '替换：大本营不能替换');
+
+  // 敌方棋子所在格不可替换
+  force(g, 0, 'infantry', 1, 2);
+  const onFoe = g.canPlace(1, 'infantry', '1,2');
+  ok(!onFoe.ok, '替换：敌方棋子所在格不能直接放');
+
+  // 可替换格集合
+  const set = g.replaceableCells(1);
+  ok(set.has(tankCell), '替换：己方格子在可替换集合里');
+  ok(!set.has(base.key), '替换：大本营不在可替换集合里');
+  ok(!set.has('1,2'), '替换：敌方棋子不在可替换集合里');
+
+  // 狙击兵替换也要方向
+  const noDir = g.canPlace(1, 'sniper', tankCell);
+  ok(!noDir.ok && /方向/.test(noDir.msg), '替换：狙击兵替换同样要选方向');
+  g.place(1, 'sniper', tankCell, { dir: 2 });
+  eq(g.pieces.get(g.occupant.get(tankCell)).kind, 'sniper', '替换：可以换成狙击兵');
+}
 console.log('\n通过 ' + pass + ' 项，失败 ' + fail + ' 项');
 process.exit(fail ? 1 : 0);
 

@@ -1080,6 +1080,119 @@ input[type="range"]::-moz-range-thumb {
   box-shadow: 0 0 0 1px rgba(251, 191, 36, 0.45), 0 12px 30px -20px rgba(251, 191, 36, 0.9);
   background: linear-gradient(180deg, rgba(251, 191, 36, 0.26), rgba(251, 191, 36, 0.08));
 }
+/* 棋子详情里的「替换」按钮 */
+.ic-swap {
+  display: block;
+  width: 100%;
+  margin-top: 8px;
+  padding: 7px 10px;
+  border-radius: 9px;
+  border: 1px solid rgba(251, 191, 36, 0.55);
+  background: rgba(251, 191, 36, 0.14);
+  color: #fde68a;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background .16s, border-color .16s;
+}
+.ic-swap:hover {
+  background: rgba(251, 191, 36, 0.24);
+  border-color: rgba(251, 191, 36, 0.9);
+}
+/* ---------- 自建棋子（MOD） ---------- */
+
+.mod-list { display: flex; flex-direction: column; gap: 6px; margin: 6px 0 8px; }
+
+.mod-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 10px;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.03);
+}
+.mod-item.on {
+  border-color: rgba(45, 212, 191, 0.55);
+  background: rgba(45, 212, 191, 0.10);
+}
+.mod-item .mi-glyph {
+  width: 28px; height: 28px; flex: none;
+  display: grid; place-items: center;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.07);
+  font-weight: 800;
+  font-size: 14px;
+  color: var(--p0);
+}
+.mod-item .mi-main { flex: 1; min-width: 0; }
+.mod-item .mi-name { font-size: 13px; font-weight: 700; }
+.mod-item .mi-stat { font-size: 10.5px; color: var(--muted); }
+.mod-item .mi-tag {
+  font-size: 9.5px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  color: var(--muted);
+  white-space: nowrap;
+}
+.mod-item .mi-tag.mine { color: #7ff2e2; border-color: rgba(45, 212, 191, 0.5); }
+.mod-item .mi-del {
+  flex: none;
+  border: none; background: none; cursor: pointer;
+  color: #fda4af; font-size: 12px; padding: 2px 4px;
+}
+.mod-item input[type="checkbox"] { width: 16px; height: 16px; accent-color: #2dd4bf; }
+
+.mod-actions { display: flex; gap: 8px; }
+.mod-actions .btn { flex: 1; }
+
+.mod-empty { font-size: 11.5px; color: var(--muted); padding: 6px 2px; }
+
+/* 编辑器 */
+.mod-editor { display: grid; grid-template-columns: minmax(0, 1fr) 210px; gap: 16px; }
+.mod-form .set-group { margin-bottom: 10px; }
+.mod-preview {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 12px;
+  background: rgba(255, 255, 255, 0.025);
+  height: fit-content;
+}
+.mod-preview-title { font-size: 11px; color: var(--muted); letter-spacing: .1em; margin-bottom: 8px; }
+
+.mod-card-preview .card { width: 100%; flex: none; }
+.mod-card-preview .card-name { font-size: 14px; }
+.mod-card-preview .card-cost { font-size: 11px; }
+.mod-card-preview .card-line { font-size: 10.5px; }
+
+.mod-tip { margin-top: 10px; font-size: 11px; line-height: 1.7; color: var(--muted); min-height: 34px; }
+
+.mod-check {
+  display: flex; align-items: center; gap: 8px;
+  font-size: 12.5px; color: var(--text); cursor: pointer;
+  padding: 6px 0;
+}
+.mod-check input { width: 16px; height: 16px; accent-color: #2dd4bf; }
+
+input.text {
+  flex: 1; min-width: 0;
+  padding: 7px 10px;
+  border-radius: 9px;
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--text);
+  font-family: inherit;
+  font-size: 13px;
+  outline: none;
+}
+input.text:focus { border-color: var(--p0); }
+
+@media (max-width: 720px) {
+  .mod-editor { grid-template-columns: minmax(0, 1fr); }
+  .mod-preview { order: -1; }
+}
 /* ---------- 新手教学 ---------- */
 
 .tut-panel {

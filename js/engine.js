@@ -114,6 +114,36 @@
     return out;
   }
 
+  // 自定义兵种：把外部定义归一化成安全的类型对象
+  function normalizeModType(id, c, index) {
+    if (!c || typeof c !== 'object') return null;
+    var name = String(c.name || '').trim().slice(0, 10);
+    if (!name) return null;
+    var num = function (v, min, max, fb) {
+      var n = Number(v);
+      if (!isFinite(n)) return fb;
+      return Math.min(max, Math.max(min, Math.round(n)));
+    };
+    var mode = c.rangeMode === 'line' ? 'line' : (c.rangeMode === 'none' ? 'none' : 'circle');
+    var t = {
+      id: String(id),
+      name: name,
+      glyph: String(c.glyph || name.charAt(0)).slice(0, 2),
+      order: 100 + (index || 0),
+      hp: num(c.hp, 1, 30, 3),
+      atk: num(c.atk, 0, 20, 1),
+      range: num(c.range, 0, 6, 1),
+      cost: num(c.cost, 0, 30, 2),
+      rangeMode: mode,
+      aura: !!c.aura,
+      mod: true,
+      desc: String(c.desc || '').slice(0, 120)
+    };
+    if (mode === 'none') t.range = 0;
+    if (t.atk <= 0) t.range = 0;
+    return t;
+  }
+
   function Game(opts) {
     opts = opts || {};
     this.side = opts.side || 5;
@@ -123,7 +153,19 @@
 
     this.rules = mergeRules(DEFAULT_RULES, opts.rules);
     this.types = mergeTypes(TYPES, opts.types);
-    this.typeList = TYPE_LIST;
+
+    // 自定义兵种（mod）：内置表里没有的键当作扩展兵种
+    var extraIds = [];
+    Object.keys(opts.types || {}).forEach(function (id) {
+      if (TYPES[id]) return;
+      var c = opts.types[id];
+      if (!c || !c.name) return;
+      var t = normalizeModType(id, c, extraIds.length);
+      if (t) { this.types[id] = t; extraIds.push(id); }
+    }, this);
+
+    this.typeList = TYPE_LIST.concat(extraIds);
+    this.allTypeList = ALL_TYPE_LIST.concat(extraIds);
 
     this.board = Hex.createBoard(this.side, this.density, this.rng);
 
@@ -251,9 +293,31 @@
     var cell = this.board.cells.get(cellKey);
     if (!cell) return { ok: false, msg: '地图外' };
     if (cell.obstacle) return { ok: false, msg: '这里是障碍' };
-    if (this.occupant.has(cellKey)) return { ok: false, msg: '这里已经有棋子了' };
+
+    // 目标格上已经有棋子
+    var occupiedId = this.occupant.get(cellKey);
+    if (occupiedId != null) {
+      var sitting = this.pieces.get(occupiedId);
+      if (!sitting) return { ok: false, msg: '这里已经有棋子了' };
+      if (sitting.kind === 'base') return { ok: false, msg: '大本营不能被替换' };
+      if (sitting.owner !== owner) return { ok: false, msg: '这里是对面的棋子' };
+      if (sitting.kind === typeId && !opts.force) {
+        return { ok: false, msg: '这个位置已经是 ' + (t.name || '同类棋子') + ' 了' };
+      }
+      return { ok: true, msg: '', replace: sitting };
+    }
+
     if (!this.legalCells(owner).has(cellKey)) return { ok: false, msg: '只能放在己方连通块的边缘' };
     return { ok: true, msg: '' };
+  };
+
+  // 可以被己方棋子替换掉的格子（不含大本营）
+  Game.prototype.replaceableCells = function (owner) {
+    var out = new Set();
+    this.pieces.forEach(function (p) {
+      if (p.owner === owner && p.kind !== 'base') out.add(p.key);
+    });
+    return out;
   };
 
   /* ---------------- 行动 ---------------- */
@@ -267,6 +331,13 @@
       throw e;
     }
     var t = this.types[typeId];
+
+    // 替换己方棋子：先把原来那个撤掉（不计入击杀/损失）
+    var replaced = null;
+    if (check.replace) {
+      replaced = this.removeById(check.replace.id);
+    }
+
     var p = {
       id: this.nextId++, owner: owner, kind: typeId, key: cellKey,
       hp: t.hp, maxHp: t.hp, atk: t.atk, range: t.range,
@@ -278,7 +349,9 @@
 
     this.history.push({
       type: 'place', owner: owner, kind: typeId, key: cellKey,
-      dir: p.dir, free: !!opts.free, turn: this.turn
+      dir: p.dir, free: !!opts.free,
+      replacedKind: replaced ? replaced.kind : null,
+      turn: this.turn
     });
     return p;
   };
