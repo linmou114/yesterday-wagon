@@ -1,0 +1,43 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="540" viewBox="0 0 960 540">
+  <rect x="0" y="0" width="960" height="540" fill="#0A1018"/>
+
+  <text x="64" y="54" font-family="Microsoft YaHei" font-size="13" fill="#2DD4BF">11 · 效果展示</text>
+  <text x="64" y="96" font-family="Microsoft YaHei" font-size="30" font-weight="700" fill="#E8EEF6">三个细节，决定它好不好用</text>
+  <rect x="64" y="112" width="832" height="1" fill="#22303F"/>
+
+  <!-- ① 范围预览 -->
+  <g>
+    <rect x="74" y="150" width="244" height="211" rx="6" fill="#121A26" stroke="#22303F"/>
+    <image x="76" y="152" width="240" height="207" href="./crop/preview.png"/>
+    <text x="74" y="386" font-family="Microsoft YaHei" font-size="13" font-weight="700" fill="#FBBF24">① 放之前就知道能打到谁</text>
+    <text x="74" y="408" font-family="Microsoft YaHei" font-size="11.5" fill="#93A4B8">选好兵种后把鼠标停在合法格上，</text>
+    <text x="74" y="426" font-family="Microsoft YaHei" font-size="11.5" fill="#93A4B8">金色虚线格 = 放这里能覆盖的范围，</text>
+    <text x="74" y="444" font-family="Microsoft YaHei" font-size="11.5" fill="#93A4B8">范围内的敌人套红圈。</text>
+  </g>
+
+  <!-- ② 替换 -->
+  <g>
+    <rect x="358" y="150" width="244" height="211" rx="6" fill="#121A26" stroke="#22303F"/>
+    <image x="360" y="152" width="240" height="207" href="./crop/replace.png"/>
+    <text x="358" y="386" font-family="Microsoft YaHei" font-size="13" font-weight="700" fill="#FBBF24">② 场上棋子可以直接换</text>
+    <text x="358" y="408" font-family="Microsoft YaHei" font-size="11.5" fill="#93A4B8">点己方棋子 → 卡片显示它现在的</text>
+    <text x="358" y="426" font-family="Microsoft YaHei" font-size="11.5" fill="#93A4B8">实际攻防（含光环）→ 再点任意兵种卡</text>
+    <text x="358" y="444" font-family="Microsoft YaHei" font-size="11.5" fill="#93A4B8">即可替换，费用按新兵种结算。</text>
+  </g>
+
+  <!-- ③ 工坊 -->
+  <g>
+    <rect x="662" y="150" width="157" height="211" rx="6" fill="#121A26" stroke="#22303F"/>
+    <image x="664" y="152" width="153" height="207" href="./crop/editor.png"/>
+    <text x="662" y="386" font-family="Microsoft YaHei" font-size="13" font-weight="700" fill="#FBBF24">③ 自建兵种工坊</text>
+    <text x="662" y="408" font-family="Microsoft YaHei" font-size="11.5" fill="#93A4B8">名称 / 图标 / 血量 / 攻击 /</text>
+    <text x="662" y="426" font-family="Microsoft YaHei" font-size="11.5" fill="#93A4B8">射程 / 费用 / 光环，右侧实时</text>
+    <text x="662" y="444" font-family="Microsoft YaHei" font-size="11.5" fill="#93A4B8">预览卡片长相。</text>
+  </g>
+
+  <rect x="64" y="464" width="832" height="1" fill="#22303F"/>
+  <text x="64" y="490" font-family="Microsoft YaHei" font-size="12" fill="#93A4B8">三处都有同一个设计取向：把「结果」提前画给玩家看，而不是让玩家下完再发现不对。</text>
+  <text x="64" y="510" font-family="Microsoft YaHei" font-size="11.5" fill="#6B7C91">工坊里定义的兵种会出现在商店第 7 张卡之后；联机时由服务端按编号补给双方，所以两边看到的是同一个兵。</text>
+
+  <text x="896" y="502" font-family="Consolas" font-size="12" fill="#33445A" text-anchor="end">11</text>
+</svg>

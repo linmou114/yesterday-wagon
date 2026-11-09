@@ -1,4 +1,4 @@
-﻿/* =========================================================
+/* =========================================================
  * server.js —— 昨日圆车 联机服务端
  *
  *   - 静态托管仓库根目录（index.html / css / js），所以整个项目只需要这一个进程
@@ -99,6 +99,10 @@ const server = http.createServer((req, res) => {
   }
 
   if (pathname === '/api/mods' && req.method === 'POST') {
+    if (!modRateOk(req)) {
+      res.writeHead(429, { 'content-type': 'application/json; charset=utf-8' });
+      return res.end(JSON.stringify({ error: '操作太频繁，请过一会儿再试' }));
+    }
     let body = '';
     let tooBig = false;
     req.on('data', (chunk) => {
@@ -151,6 +155,10 @@ const server = http.createServer((req, res) => {
   }
 
   if (pathname.indexOf('/api/mods/') === 0 && req.method === 'DELETE') {
+    if (!modRateOk(req)) {
+      res.writeHead(429, { 'content-type': 'application/json; charset=utf-8' });
+      return res.end(JSON.stringify({ error: '操作太频繁，请过一会儿再试' }));
+    }
     const id = pathname.slice('/api/mods/'.length);
     const m = modStore.get(id);
     const secret = String(req.headers['x-mod-secret'] || '');
@@ -167,7 +175,7 @@ const server = http.createServer((req, res) => {
   if (pathname === '/') pathname = '/index.html';
 
   const file = path.normalize(path.join(ROOT, pathname));
-  if (!file.startsWith(ROOT)) {
+  if (file !== ROOT && !file.startsWith(ROOT + path.sep)) {
     res.writeHead(403);
     return res.end('forbidden');
   }
@@ -233,6 +241,25 @@ function modCountBy(owner) {
   let n = 0;
   modStore.forEach((m) => { if (m && m.owner === owner) n += 1; });
   return n;
+}
+
+// 简单的按 IP 限流：10 分钟内最多写 20 次（上传 + 删除）
+const MOD_RATE = new Map();          // ip -> [timestamp...]
+const MOD_RATE_WINDOW = 10 * 60 * 1000;
+const MOD_RATE_MAX = 20;
+
+function modRateOk(req) {
+  const ip = (req.socket && req.socket.remoteAddress) || 'unknown';
+  const now = Date.now();
+  const arr = (MOD_RATE.get(ip) || []).filter((t) => now - t < MOD_RATE_WINDOW);
+  if (arr.length >= MOD_RATE_MAX) {
+    MOD_RATE.set(ip, arr);
+    return false;
+  }
+  arr.push(now);
+  MOD_RATE.set(ip, arr);
+  if (MOD_RATE.size > 5000) MOD_RATE.clear();   // 防止无限增长
+  return true;
 }
 
 function modNum(v, min, max, fallback) {

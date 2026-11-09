@@ -1,0 +1,57 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="540" viewBox="0 0 960 540">
+  <rect x="0" y="0" width="960" height="540" fill="#0A1018"/>
+
+  <text x="64" y="54" font-family="Microsoft YaHei" font-size="13" fill="#2DD4BF">07 · 技术方案｜核心模块</text>
+  <text x="64" y="96" font-family="Microsoft YaHei" font-size="30" font-weight="700" fill="#E8EEF6">规则引擎：一回合只走四步</text>
+  <rect x="64" y="112" width="832" height="1" fill="#22303F"/>
+
+  <!-- 左：回合流程 -->
+  <g>
+    <text x="64" y="146" font-family="Microsoft YaHei" font-size="12" fill="#6B7C91">回合流程（可反复执行）</text>
+
+    <rect x="64" y="160" width="360" height="52" rx="10" fill="#121A26" stroke="#22303F"/>
+    <circle cx="88" cy="186" r="12" fill="#2DD4BF" fill-opacity="0.14" stroke="#2DD4BF" stroke-opacity="0.45"/>
+    <text x="88" y="190" font-family="Consolas" font-size="11" font-weight="700" fill="#2DD4BF" text-anchor="middle">1</text>
+    <text x="112" y="184" font-family="Microsoft YaHei" font-size="14" font-weight="700" fill="#E8EEF6">放置</text>
+    <text x="112" y="202" font-family="Microsoft YaHei" font-size="11.5" fill="#93A4B8">扣费 · 校验连通 · 可选择方向</text>
+
+    <rect x="64" y="222" width="360" height="52" rx="10" fill="#121A26" stroke="#22303F"/>
+    <circle cx="88" cy="248" r="12" fill="#2DD4BF" fill-opacity="0.14" stroke="#2DD4BF" stroke-opacity="0.45"/>
+    <text x="88" y="252" font-family="Consolas" font-size="11" font-weight="700" fill="#2DD4BF" text-anchor="middle">2</text>
+    <text x="112" y="246" font-family="Microsoft YaHei" font-size="14" font-weight="700" fill="#E8EEF6">替换</text>
+    <text x="112" y="264" font-family="Microsoft YaHei" font-size="11.5" fill="#93A4B8">点己方棋子选中，再点兵种卡换掉</text>
+
+    <rect x="64" y="284" width="360" height="52" rx="10" fill="#0E1A26" stroke="#2DD4BF" stroke-opacity="0.55"/>
+    <circle cx="88" cy="310" r="12" fill="#2DD4BF" fill-opacity="0.2" stroke="#2DD4BF" stroke-opacity="0.6"/>
+    <text x="88" y="314" font-family="Consolas" font-size="11" font-weight="700" fill="#2DD4BF" text-anchor="middle">3</text>
+    <text x="112" y="308" font-family="Microsoft YaHei" font-size="14" font-weight="700" fill="#E8EEF6">结算</text>
+    <text x="112" y="326" font-family="Microsoft YaHei" font-size="11.5" fill="#93A4B8">累计伤害 → 同时判定 → 移除</text>
+
+    <rect x="64" y="346" width="360" height="52" rx="10" fill="#121A26" stroke="#22303F"/>
+    <circle cx="88" cy="372" r="12" fill="#2DD4BF" fill-opacity="0.14" stroke="#2DD4BF" stroke-opacity="0.45"/>
+    <text x="88" y="376" font-family="Consolas" font-size="11" font-weight="700" fill="#2DD4BF" text-anchor="middle">4</text>
+    <text x="112" y="370" font-family="Microsoft YaHei" font-size="14" font-weight="700" fill="#E8EEF6">结束回合</text>
+    <text x="112" y="388" font-family="Microsoft YaHei" font-size="11.5" fill="#93A4B8">+3 费 · 换手 · 断联检查</text>
+  </g>
+
+  <!-- 右：三张要点 -->
+  <g>
+    <rect x="452" y="146" width="444" height="120" rx="12" fill="#121A26" stroke="#22303F"/>
+    <text x="472" y="172" font-family="Microsoft YaHei" font-size="14" font-weight="700" fill="#2DD4BF">放置合法性 = 连通块边缘</text>
+    <text x="472" y="196" font-family="Microsoft YaHei" font-size="12" fill="#93A4B8">从己方大本营做一次 BFS，能走到且与己方棋子相邻的空格才可放。</text>
+    <text x="472" y="220" font-family="Microsoft YaHei" font-size="12" fill="#93A4B8">被隔断的棋子每回合检查一次，断开就整串消失（可连锁）。</text>
+    <text x="472" y="248" font-family="Consolas" font-size="11" fill="#6B7C91">neighbors → BFS → edge(owner)</text>
+
+    <rect x="452" y="278" width="444" height="120" rx="12" fill="#121A26" stroke="#22303F"/>
+    <text x="472" y="304" font-family="Microsoft YaHei" font-size="14" font-weight="700" fill="#F43F5E">结算三阶段，同一份快照</text>
+    <text x="472" y="328" font-family="Microsoft YaHei" font-size="12" fill="#93A4B8">① 先算全场伤害表（此时谁都不死）② 再同时判定 hp ≤ dmg</text>
+    <text x="472" y="352" font-family="Microsoft YaHei" font-size="12" fill="#93A4B8">③ 最后一次性移除。这样「互击同归于尽」不会因为遍历顺序变成</text>
+    <text x="472" y="374" font-family="Microsoft YaHei" font-size="12" fill="#93A4B8">「先打的人赢」。</text>
+
+    <rect x="452" y="410" width="444" height="60" rx="12" fill="#121A26" stroke="#22303F"/>
+    <text x="472" y="436" font-family="Microsoft YaHei" font-size="14" font-weight="700" fill="#FBBF24">光环是数据，同类取最高</text>
+    <text x="472" y="458" font-family="Microsoft YaHei" font-size="12" fill="#93A4B8">半径 + 效果 + 数值三个字段；同种效果叠加会破坏平衡，故只取最大值。</text>
+  </g>
+
+  <text x="896" y="502" font-family="Consolas" font-size="12" fill="#33445A" text-anchor="end">07</text>
+</svg>

@@ -1,0 +1,36 @@
+﻿<svg xmlns="http://www.w3.org/2000/svg" width="960" height="540" viewBox="0 0 960 540">
+  <rect x="0" y="0" width="960" height="540" fill="#0A1018"/>
+  <circle cx="742" cy="270" r="240" fill="#2DD4BF" fill-opacity="0.04"/>
+  <circle cx="742" cy="270" r="150" fill="#2DD4BF" fill-opacity="0.04"/>
+
+  <!-- 右侧：七格花形棋盘片段 -->
+  <g transform="translate(742,270)" fill="none" stroke="#22303F" stroke-width="1.6">
+    <polygon points="0,-46 40,-23 40,23 0,46 -40,23 -40,-23"/>
+    <polygon points="40,-69 80,-46 80,0 40,23 0,0 0,-46"/>
+    <polygon points="-40,-69 0,-46 0,0 -40,23 -80,0 -80,-46"/>
+    <polygon points="80,0 120,23 120,69 80,92 40,69 40,23"/>
+    <polygon points="-80,0 -40,23 -40,69 -80,92 -120,69 -120,23"/>
+    <polygon points="0,46 40,69 40,115 0,138 -40,115 -40,69"/>
+  </g>
+  <g transform="translate(742,270)">
+    <polygon points="40,-69 80,-46 80,0 40,23 0,0 0,-46" fill="#F43F5E" fill-opacity="0.16" stroke="#F43F5E" stroke-width="2"/>
+    <text x="40" y="-24" font-family="Microsoft YaHei" font-size="26" font-weight="700" fill="#F43F5E" text-anchor="middle" dominant-baseline="middle">坦</text>
+    <polygon points="0,46 40,69 40,115 0,138 -40,115 -40,69" fill="#2DD4BF" fill-opacity="0.14" stroke="#2DD4BF" stroke-width="2"/>
+    <text x="0" y="93" font-family="Microsoft YaHei" font-size="26" font-weight="700" fill="#2DD4BF" text-anchor="middle" dominant-baseline="middle">狙</text>
+  </g>
+
+  <!-- 左侧文字 -->
+  <text x="64" y="146" font-family="Microsoft YaHei" font-size="14" fill="#2DD4BF">NEW STUDENT SEMINAR · 项目答辩</text>
+  <text x="64" y="204" font-family="Microsoft YaHei" font-size="50" font-weight="700" fill="#E8EEF6">昨日圆车</text>
+  <text x="66" y="240" font-family="Consolas" font-size="19" font-weight="700" fill="#7F90A6">HEX WAGON</text>
+  <rect x="64" y="262" width="64" height="3" fill="#2DD4BF"/>
+  <text x="64" y="306" font-family="Microsoft YaHei" font-size="22" fill="#C7D3E1">六边形网格 · 双人回合制战棋</text>
+  <text x="64" y="340" font-family="Microsoft YaHei" font-size="14.5" fill="#93A4B8">规则引擎 / 启发式 AI / WebSocket 联机 / 自建兵种工坊</text>
+
+  <g font-family="Microsoft YaHei" font-size="13" fill="#6B7C91">
+    <text x="64" y="452">第 XX 组　·　作者 1　作者 2　作者 3　作者 4</text>
+    <text x="64" y="478">2026 年 11 月</text>
+  </g>
+
+  <text x="896" y="502" font-family="Consolas" font-size="12" fill="#33445A" text-anchor="end">01</text>
+</svg>

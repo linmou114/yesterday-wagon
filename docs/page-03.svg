@@ -1,0 +1,49 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="540" viewBox="0 0 960 540">
+  <rect x="0" y="0" width="960" height="540" fill="#0A1018"/>
+
+  <text x="64" y="54" font-family="Microsoft YaHei" font-size="13" fill="#2DD4BF">03 · 应用背景</text>
+  <text x="64" y="96" font-family="Microsoft YaHei" font-size="30" font-weight="700" fill="#E8EEF6">为什么选一款战棋来做</text>
+  <rect x="64" y="112" width="832" height="1" fill="#22303F"/>
+  <text x="64" y="140" font-family="Microsoft YaHei" font-size="14" fill="#93A4B8">不是因为它好写，而是因为它把课程里的四类知识压在同一张桌子上</text>
+
+  <!-- 三张论点卡 -->
+  <g>
+    <rect x="64" y="164" width="264" height="196" rx="12" fill="#121A26" stroke="#22303F"/>
+    <circle cx="92" cy="196" r="13" fill="#2DD4BF" fill-opacity="0.14" stroke="#2DD4BF" stroke-opacity="0.5"/>
+    <text x="92" y="201" font-family="Consolas" font-size="13" font-weight="700" fill="#2DD4BF" text-anchor="middle">01</text>
+    <text x="116" y="202" font-family="Microsoft YaHei" font-size="17" font-weight="700" fill="#E8EEF6">规则可形式化</text>
+    <text x="88" y="240" font-family="Microsoft YaHei" font-size="13" fill="#93A4B8">整局只用「棋盘 + 棋子 + 费用」表示，</text>
+    <text x="88" y="262" font-family="Microsoft YaHei" font-size="13" fill="#93A4B8">每条规则都能写成一条断言：</text>
+    <text x="88" y="292" font-family="Microsoft YaHei" font-size="13" fill="#C7D3E1">能不能放、打几点、谁先死、</text>
+    <text x="88" y="314" font-family="Microsoft YaHei" font-size="13" fill="#C7D3E1">断联之后连锁掉谁。</text>
+    <text x="88" y="342" font-family="Microsoft YaHei" font-size="12" fill="#6B7C91">→ 可以做成自动化测试</text>
+
+    <rect x="348" y="164" width="264" height="196" rx="12" fill="#121A26" stroke="#22303F"/>
+    <circle cx="376" cy="196" r="13" fill="#F43F5E" fill-opacity="0.14" stroke="#F43F5E" stroke-opacity="0.5"/>
+    <text x="376" y="201" font-family="Consolas" font-size="13" font-weight="700" fill="#F43F5E" text-anchor="middle">02</text>
+    <text x="400" y="202" font-family="Microsoft YaHei" font-size="17" font-weight="700" fill="#E8EEF6">状态必须一致</text>
+    <text x="372" y="240" font-family="Microsoft YaHei" font-size="13" fill="#93A4B8">一击致死要在同一时刻判定，</text>
+    <text x="372" y="262" font-family="Microsoft YaHei" font-size="13" fill="#93A4B8">断联移除还会引发连锁。</text>
+    <text x="372" y="292" font-family="Microsoft YaHei" font-size="13" fill="#C7D3E1">算错一步，玩家当场就能看见；</text>
+    <text x="372" y="314" font-family="Microsoft YaHei" font-size="13" fill="#C7D3E1">联机时两边还会各算一份。</text>
+    <text x="372" y="342" font-family="Microsoft YaHei" font-size="12" fill="#6B7C91">→ 必须做「单份规则 + 服务端权威」</text>
+
+    <rect x="632" y="164" width="264" height="196" rx="12" fill="#121A26" stroke="#22303F"/>
+    <circle cx="660" cy="196" r="13" fill="#FBBF24" fill-opacity="0.14" stroke="#FBBF24" stroke-opacity="0.5"/>
+    <text x="660" y="201" font-family="Consolas" font-size="13" font-weight="700" fill="#FBBF24" text-anchor="middle">03</text>
+    <text x="684" y="202" font-family="Microsoft YaHei" font-size="17" font-weight="700" fill="#E8EEF6">需求会一直长</text>
+    <text x="656" y="240" font-family="Microsoft YaHei" font-size="13" fill="#93A4B8">从 3 个兵种加到 7 个，</text>
+    <text x="656" y="262" font-family="Microsoft YaHei" font-size="13" fill="#93A4B8">再加光环、替换、自建兵种。</text>
+    <text x="656" y="292" font-family="Microsoft YaHei" font-size="13" fill="#C7D3E1">如果每种新玩法都要改一遍</text>
+    <text x="656" y="314" font-family="Microsoft YaHei" font-size="13" fill="#C7D3E1">渲染和网络代码，就会失控。</text>
+    <text x="656" y="342" font-family="Microsoft YaHei" font-size="12" fill="#6B7C91">→ 考验的是「可扩展」而不是「能跑」</text>
+  </g>
+
+  <!-- 结论条 -->
+  <rect x="64" y="386" width="832" height="76" rx="12" fill="#0E1A26" stroke="#2DD4BF" stroke-opacity="0.35"/>
+  <rect x="64" y="386" width="4" height="76" fill="#2DD4BF"/>
+  <text x="92" y="418" font-family="Microsoft YaHei" font-size="15" fill="#E8EEF6">换句话说：它同时压住了 数据结构（六边形）、算法（AI 与结算）、网络（联机同步）、软件设计（可扩展）四条线。</text>
+  <text x="92" y="444" font-family="Microsoft YaHei" font-size="13" fill="#93A4B8">这也是我们最终没有做「贪吃蛇 / 2048 类」小游戏的原因——它们很难长到需要架构的程度。</text>
+
+  <text x="896" y="502" font-family="Consolas" font-size="12" fill="#33445A" text-anchor="end">03</text>
+</svg>

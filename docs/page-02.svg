@@ -1,0 +1,48 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="540" viewBox="0 0 960 540">
+  <rect x="0" y="0" width="960" height="540" fill="#0A1018"/>
+
+  <text x="64" y="54" font-family="Microsoft YaHei" font-size="13" fill="#2DD4BF">02 · 一页看懂</text>
+  <text x="64" y="96" font-family="Microsoft YaHei" font-size="30" font-weight="700" fill="#E8EEF6">一页看懂这个项目</text>
+  <rect x="64" y="112" width="832" height="1" fill="#22303F"/>
+
+  <!-- 四个数字 -->
+  <g>
+    <rect x="64" y="140" width="196" height="120" rx="12" fill="#121A26" stroke="#22303F"/>
+    <text x="88" y="196" font-family="Consolas" font-size="46" font-weight="700" fill="#2DD4BF">7</text>
+    <text x="124" y="196" font-family="Microsoft YaHei" font-size="15" fill="#7F90A6">种兵种</text>
+    <text x="88" y="230" font-family="Microsoft YaHei" font-size="12.5" fill="#93A4B8">含光环、召唤与直线攻击</text>
+
+    <rect x="276" y="140" width="196" height="120" rx="12" fill="#121A26" stroke="#22303F"/>
+    <text x="300" y="196" font-family="Consolas" font-size="46" font-weight="700" fill="#F43F5E">4</text>
+    <text x="336" y="196" font-family="Microsoft YaHei" font-size="15" fill="#7F90A6">种模式</text>
+    <text x="300" y="230" font-family="Microsoft YaHei" font-size="12.5" fill="#93A4B8">本地 / 人机 / 联机 / 教学</text>
+
+    <rect x="488" y="140" width="196" height="120" rx="12" fill="#121A26" stroke="#22303F"/>
+    <text x="512" y="196" font-family="Consolas" font-size="46" font-weight="700" fill="#FBBF24">819</text>
+    <text x="592" y="196" font-family="Microsoft YaHei" font-size="15" fill="#7F90A6">项断言</text>
+    <text x="512" y="230" font-family="Microsoft YaHei" font-size="12.5" fill="#93A4B8">规则 / AI / 联机 三套自动化</text>
+
+    <rect x="700" y="140" width="196" height="120" rx="12" fill="#121A26" stroke="#22303F"/>
+    <text x="724" y="196" font-family="Consolas" font-size="40" font-weight="700" fill="#A78BFA">1</text>
+    <text x="748" y="196" font-family="Microsoft YaHei" font-size="15" fill="#7F90A6">条命令部署</text>
+    <text x="724" y="230" font-family="Microsoft YaHei" font-size="12.5" fill="#93A4B8">静态资源 + Node 服务端</text>
+  </g>
+
+  <!-- 一句话 -->
+  <rect x="64" y="286" width="832" height="86" rx="12" fill="#0E1A26" stroke="#2DD4BF" stroke-opacity="0.35"/>
+  <rect x="64" y="286" width="4" height="86" fill="#2DD4BF"/>
+  <text x="92" y="322" font-family="Microsoft YaHei" font-size="17" fill="#E8EEF6">浏览器打开就能玩：一份规则代码，客户端与服务端共用</text>
+  <text x="92" y="350" font-family="Microsoft YaHei" font-size="13" fill="#93A4B8">单机、AI、联机三条路径走的是同一个 engine.js，所以「客户端能下、服务端不认」这类分歧在结构上不存在</text>
+
+  <!-- 三个小标语 -->
+  <g font-family="Microsoft YaHei" font-size="13">
+    <text x="64" y="410" fill="#6B7C91">▪ 纯静态前端，无构建步骤</text>
+    <text x="344" y="410" fill="#6B7C91">▪ 规则层零依赖 DOM，命令行可测</text>
+    <text x="624" y="410" fill="#6B7C91">▪ 玩家可自建兵种并上传</text>
+  </g>
+
+  <rect x="64" y="432" width="832" height="1" fill="#22303F"/>
+  <text x="64" y="470" font-family="Microsoft YaHei" font-size="12.5" fill="#93A4B8">今天要讲：为什么做（背景）→ 别人做到哪（现状）→ 我们怎么做（方案）→ 做出来什么样（展示）→ 还能怎么走（展望）</text>
+
+  <text x="896" y="502" font-family="Consolas" font-size="12" fill="#33445A" text-anchor="end">02</text>
+</svg>

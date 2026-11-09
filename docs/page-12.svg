@@ -1,0 +1,62 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="540" viewBox="0 0 960 540">
+  <rect x="0" y="0" width="960" height="540" fill="#0A1018"/>
+
+  <text x="64" y="54" font-family="Microsoft YaHei" font-size="13" fill="#2DD4BF">12 · 验证与上线</text>
+  <text x="64" y="96" font-family="Microsoft YaHei" font-size="30" font-weight="700" fill="#E8EEF6">怎么证明它是对的</text>
+  <rect x="64" y="112" width="832" height="1" fill="#22303F"/>
+
+  <!-- 左：三套测试 -->
+  <text x="64" y="142" font-family="Microsoft YaHei" font-size="12" fill="#6B7C91">三套自动化测试，合计 819 项断言（&lt; 3 秒跑完）</text>
+  <g>
+    <rect x="64" y="154" width="404" height="98" rx="12" fill="#121A26" stroke="#22303F"/>
+    <text x="88" y="182" font-family="Microsoft YaHei" font-size="14" font-weight="700" fill="#E8EEF6">规则测试</text>
+    <text x="196" y="182" font-family="Consolas" font-size="15" font-weight="700" fill="#2DD4BF">678</text>
+    <text x="88" y="208" font-family="Microsoft YaHei" font-size="11.5" fill="#93A4B8">放置 / 结算 / 断联 / 光环 / 替换 / 序列化</text>
+    <text x="88" y="232" font-family="Microsoft YaHei" font-size="11.5" fill="#7F90A6">每条规则至少一个「反例断言」：不该允许的必须被拒绝</text>
+
+    <rect x="64" y="262" width="404" height="74" rx="12" fill="#121A26" stroke="#22303F"/>
+    <text x="88" y="290" font-family="Microsoft YaHei" font-size="14" font-weight="700" fill="#E8EEF6">AI 测试</text>
+    <text x="196" y="290" font-family="Consolas" font-size="15" font-weight="700" fill="#F43F5E">97</text>
+    <text x="88" y="316" font-family="Microsoft YaHei" font-size="11.5" fill="#93A4B8">合法着法 / 不超预算 / 对随机 20:0 / 不出现空回合</text>
+
+    <rect x="64" y="346" width="404" height="74" rx="12" fill="#121A26" stroke="#22303F"/>
+    <text x="88" y="374" font-family="Microsoft YaHei" font-size="14" font-weight="700" fill="#E8EEF6">联机测试</text>
+    <text x="196" y="374" font-family="Consolas" font-size="15" font-weight="700" fill="#FBBF24">44</text>
+    <text x="88" y="400" font-family="Microsoft YaHei" font-size="11.5" fill="#93A4B8">建房 / 越权 / 重连 / 求和 / 认输 / mod 注入</text>
+  </g>
+
+  <!-- 左下：bug 故事 -->
+  <rect x="64" y="434" width="404" height="58" rx="10" fill="#0E1A26" stroke="#2DD4BF" stroke-opacity="0.35"/>
+  <text x="84" y="458" font-family="Microsoft YaHei" font-size="12.5" fill="#E8EEF6">测试不是摆设：改完光环与替换功能后，测试先红后绿，</text>
+  <text x="84" y="478" font-family="Microsoft YaHei" font-size="12.5" fill="#E8EEF6">才敢把改动推到线上。</text>
+
+  <!-- 右：上线 -->
+  <text x="492" y="142" font-family="Microsoft YaHei" font-size="12" fill="#6B7C91">已部署在公网（阿里云轻量应用服务器）</text>
+  <g>
+    <rect x="492" y="154" width="404" height="128" rx="12" fill="#121A26" stroke="#22303F"/>
+    <text x="512" y="182" font-family="Consolas" font-size="12.5" fill="#C7D3E1">http://47.117.128.251:3000</text>
+    <text x="512" y="206" font-family="Microsoft YaHei" font-size="11.5" fill="#93A4B8">Ubuntu 24.04 · 2 vCPU / 2 GB · 端口 3000</text>
+    <text x="512" y="228" font-family="Microsoft YaHei" font-size="11.5" fill="#93A4B8">systemd 托管，崩溃自动重启；一条命令热更新</text>
+    <text x="512" y="252" font-family="Consolas" font-size="11.5" fill="#7F90A6">GET /health → ok　　GET /stats → {rooms, waiting, players}</text>
+    <text x="512" y="272" font-family="Microsoft YaHei" font-size="11" fill="#6B7C91">域名已注册（yesterday-wagon.xyz），ICP 备案在流程中</text>
+  </g>
+
+  <!-- 右上：问题修复表 -->
+  <text x="492" y="308" font-family="Microsoft YaHei" font-size="12" fill="#6B7C91">答辩前修掉的真实问题（都写了回归断言）</text>
+  <g font-family="Microsoft YaHei" font-size="11.5">
+    <rect x="492" y="318" width="404" height="86" rx="10" fill="#121A26" stroke="#22303F"/>
+    <text x="512" y="342" fill="#93A4B8">▪ 服务器上的自建棋子选不中</text>
+    <text x="700" y="342" fill="#6B7C91">列表行点击未绑定 / 定义只查本地</text>
+    <text x="512" y="364" fill="#93A4B8">▪ 删掉的兵种刷新后又回来了</text>
+    <text x="700" y="364" fill="#6B7C91">删除只清本地，缓存又合并回来</text>
+    <text x="512" y="386" fill="#93A4B8">▪ 狙击兵选方向时看不到箭头</text>
+    <text x="700" y="386" fill="#7F90A6">删角标时误删了绘制调用</text>
+  </g>
+
+  <rect x="492" y="414" width="404" height="78" rx="10" fill="#0E1A26" stroke="#2DD4BF" stroke-opacity="0.35"/>
+  <text x="512" y="438" font-family="Microsoft YaHei" font-size="12.5" fill="#E8EEF6">三个问题有个共同点：都是「看起来存下来了，其实没有」。</text>
+  <text x="512" y="460" font-family="Microsoft YaHei" font-size="11.5" fill="#93A4B8">所以后来加了读回校验：写完立刻读一遍模型，而不是相信返回值。</text>
+  <text x="512" y="480" font-family="Microsoft YaHei" font-size="11.5" fill="#7F90A6">这也是我们在测试里坚持「正例 + 反例」的原因。</text>
+
+  <text x="896" y="502" font-family="Consolas" font-size="12" fill="#33445A" text-anchor="end">12</text>
+</svg>

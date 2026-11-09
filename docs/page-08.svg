@@ -1,0 +1,71 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="540" viewBox="0 0 960 540">
+  <rect x="0" y="0" width="960" height="540" fill="#0A1018"/>
+
+  <text x="64" y="54" font-family="Microsoft YaHei" font-size="13" fill="#2DD4BF">08 · 技术方案｜核心模块</text>
+  <text x="64" y="96" font-family="Microsoft YaHei" font-size="30" font-weight="700" fill="#E8EEF6">AI：评估函数比搜索深度更要紧</text>
+  <rect x="64" y="112" width="832" height="1" fill="#22303F"/>
+
+  <!-- 左：五项评估 -->
+  <text x="64" y="142" font-family="Microsoft YaHei" font-size="12" fill="#6B7C91">评估函数由五项组成（数值经自对弈调试）</text>
+  <g font-family="Microsoft YaHei" font-size="12.5">
+    <text x="64" y="172" fill="#C7D3E1">棋子价值</text>
+    <text x="176" y="172" font-size="11.5" fill="#7F90A6">按攻击力 / 血量 / 射程合成，光环按边际贡献折算</text>
+    <rect x="64" y="182" width="360" height="6" rx="3" fill="#1B2735"/><rect x="64" y="182" width="320" height="6" rx="3" fill="#2DD4BF"/>
+
+    <text x="64" y="212" fill="#C7D3E1">残血折价</text>
+    <text x="176" y="212" font-size="11.5" fill="#7F90A6">血量越低越便宜，被打一次再折一次</text>
+    <rect x="64" y="222" width="360" height="6" rx="3" fill="#1B2735"/><rect x="64" y="222" width="210" height="6" rx="3" fill="#2DD4BF"/>
+
+    <text x="64" y="252" fill="#C7D3E1">吃子估值</text>
+    <text x="176" y="252" font-size="11.5" fill="#7F90A6">先算伤害表，本回合会死的棋子按已死计分</text>
+    <rect x="64" y="262" width="360" height="6" rx="3" fill="#1B2735"/><rect x="64" y="262" width="340" height="6" rx="3" fill="#F43F5E"/>
+
+    <text x="64" y="292" fill="#C7D3E1">推进施压</text>
+    <text x="176" y="292" font-size="11.5" fill="#7F90A6">离对方大本营越近越好，能一击打爆直接返回胜势</text>
+    <rect x="64" y="302" width="360" height="6" rx="3" fill="#1B2735"/><rect x="64" y="302" width="250" height="6" rx="3" fill="#2DD4BF"/>
+
+    <text x="64" y="332" fill="#C7D3E1">子力数量</text>
+    <text x="176" y="332" font-size="11.5" fill="#7F90A6">每个存活棋子给一点「场面分」</text>
+    <rect x="64" y="342" width="360" height="6" rx="3" fill="#1B2735"/><rect x="64" y="342" width="120" height="6" rx="3" fill="#2DD4BF"/>
+  </g>
+
+  <!-- 左下：为什么不做 MCTS -->
+  <rect x="64" y="372" width="360" height="98" rx="12" fill="#0E1A26" stroke="#2DD4BF" stroke-opacity="0.35"/>
+  <text x="84" y="398" font-family="Microsoft YaHei" font-size="13" font-weight="700" fill="#2DD4BF">为什么不套 MCTS</text>
+  <text x="84" y="422" font-family="Microsoft YaHei" font-size="11.5" fill="#93A4B8">单回合可行动作数在百级，分支因子大但深度浅；</text>
+  <text x="84" y="442" font-family="Microsoft YaHei" font-size="11.5" fill="#93A4B8">纯搜索在 10 ms 预算里只能看两三步，收益不如把</text>
+  <text x="84" y="462" font-family="Microsoft YaHei" font-size="11.5" fill="#93A4B8">评估写准——实测加吃子项后对旧版 7 胜 2 负。</text>
+
+  <!-- 右：一步前瞻 -->
+  <text x="452" y="142" font-family="Microsoft YaHei" font-size="12" fill="#6B7C91">决策方式：枚举 + 一步前瞻</text>
+  <rect x="452" y="154" width="444" height="150" rx="12" fill="#121A26" stroke="#22303F"/>
+  <text x="472" y="182" font-family="Microsoft YaHei" font-size="12.5" fill="#C7D3E1">枚举所有「花钱方式」</text>
+  <text x="472" y="206" font-family="Consolas" font-size="11.5" fill="#93A4B8">买哪一类 × 放哪个格 × 挂哪个方向 × 换哪个子</text>
+  <text x="472" y="234" font-family="Microsoft YaHei" font-size="12.5" fill="#C7D3E1">每个候选：克隆局面 → 落子 → 估分</text>
+  <text x="472" y="258" font-family="Consolas" font-size="11.5" fill="#93A4B8">clone() → place() → evaluate()　取最高分</text>
+  <text x="472" y="284" font-family="Microsoft YaHei" font-size="11.5" fill="#7F90A6">单次选点约 10 ms；走完一整回合约 30 ms</text>
+
+  <!-- 右下：数据 -->
+  <text x="452" y="330" font-family="Microsoft YaHei" font-size="12" fill="#6B7C91">效果（固定随机种子，各 20 局）</text>
+  <g>
+    <rect x="452" y="342" width="444" height="128" rx="12" fill="#121A26" stroke="#22303F"/>
+    <text x="472" y="368" font-family="Microsoft YaHei" font-size="12.5" fill="#93A4B8">对随机走子</text>
+    <rect x="580" y="356" width="180" height="16" rx="4" fill="#1B2735"/>
+    <rect x="580" y="356" width="180" height="16" rx="4" fill="#2DD4BF"/>
+    <text x="772" y="369" font-family="Consolas" font-size="12" font-weight="700" fill="#2DD4BF">20 : 0</text>
+
+    <text x="472" y="404" font-family="Microsoft YaHei" font-size="12.5" fill="#93A4B8">对上一版 AI</text>
+    <rect x="580" y="392" width="180" height="16" rx="4" fill="#1B2735"/>
+    <rect x="580" y="392" width="61" height="16" rx="3" fill="#2DD4BF"/>
+    <rect x="643" y="392" width="16" height="16" rx="3" fill="#F43F5E"/>
+    <rect x="661" y="392" width="99" height="16" rx="3" fill="#33445A"/>
+    <text x="772" y="405" font-family="Microsoft YaHei" font-size="11.5" font-weight="700" fill="#E8EEF6">7 胜 · 2 负 · 11 平</text>
+
+    <text x="472" y="440" font-family="Microsoft YaHei" font-size="12.5" fill="#93A4B8">单次选点耗时</text>
+    <text x="580" y="441" font-family="Consolas" font-size="13" font-weight="700" fill="#FBBF24">≈ 10 ms</text>
+    <text x="676" y="441" font-family="Microsoft YaHei" font-size="11.5" fill="#7F90A6">（自对弈 6 局，记录每步平均）</text>
+    <text x="472" y="462" font-family="Microsoft YaHei" font-size="11" fill="#6B7C91">平局多是因为双方都退化成对耗——这本身说明评估函数偏保守</text>
+  </g>
+
+  <text x="896" y="502" font-family="Consolas" font-size="12" fill="#33445A" text-anchor="end">08</text>
+</svg>
