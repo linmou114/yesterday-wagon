@@ -8,3 +8,11 @@ tools/_*.js
 *.log
 *.zip
 data/
+
+# 答辩材料只在本地保存，不发布到仓库
+docs/答辩*
+docs/昨日圆车-答辩.*
+docs/page-*.svg
+docs/spec.md
+docs/crop/
+docs/slides-png/
