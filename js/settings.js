@@ -1,4 +1,4 @@
-﻿/* =========================================================
+/* =========================================================
  * settings.js —— 设置的数据模型（菜单页与对局页共用）
  *
  *   菜单页负责「编辑」，对局页只负责「读取」，
@@ -61,7 +61,9 @@
       t.hp = clampInt(t.hp, 1, 30, ENGINE.TYPES[id].hp);
       t.atk = clampInt(t.atk, 0, 20, ENGINE.TYPES[id].atk);
       t.range = clampInt(t.range, 0, 6, ENGINE.TYPES[id].range);
-      t.cost = clampInt(t.cost, 1, 30, ENGINE.TYPES[id].cost);
+      // 召唤物（奴隶）本来就不花钱买，费用下限放 0，否则面板会显示成「1 费」
+      var minCost = ENGINE.TYPES[id].noDeploy ? 0 : 1;
+      t.cost = clampInt(t.cost, minCost, 30, ENGINE.TYPES[id].cost);
     });
     return s;
   }

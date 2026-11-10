@@ -1,4 +1,4 @@
-﻿<!doctype html>
+<!doctype html>
 <html lang="zh-CN">
 <head>
 <meta charset="utf-8" />
@@ -126,6 +126,19 @@
 
     <div class="modal-actions">
       <button class="btn ghost" id="btnOnlineBack" type="button">返回主菜单</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============ 建房前的房间规则确认 ============ -->
+<div class="overlay hidden" id="ovRoomRules">
+  <div class="modal">
+    <h1 class="modal-title" style="font-size:22px">这一步会锁定规则</h1>
+    <p class="modal-sub">房间建好后，这些数值就固定了；对手进来看的是同一套，双方都改不了</p>
+    <div id="roomRulesBody" class="room-rules"></div>
+    <div class="modal-actions">
+      <button class="btn ghost" id="btnRoomRulesCancel" type="button">再改改</button>
+      <button class="btn primary" id="btnRoomRulesOk" type="button">按这套建房</button>
     </div>
   </div>
 </div>

@@ -1052,6 +1052,9 @@ function placePending() {
     var g = app.game;
     addLog('联机对局 · 房号 ' + app.online.code + ' · 你是 ' + g.players[app.mySeat].name, 'sys');
     addLog('地图 · 边长 ' + g.side + '（' + g.board.count + ' 格 / ' + g.board.obstacles + ' 处障碍）', 'sys');
+    // 对手也要能看见这套规则：房主建房时确认过的就是它
+    addLog('规则 · ' + g.players[g.firstPlayer].name + '先手（' + g.rules.firstTurnEnergy[g.firstPlayer] +
+      ' 点）· 之后每回合 ' + g.rules.energyPerTurn + ' 点 · 大本营 ' + g.rules.baseHp + ' 血', 'sys');
     addLog('第 ' + g.turn + ' 回合 · ' + g.players[g.active].name + ' 行动', 'turn');
 
     if (msg.event) applyRemoteEvent(msg.event);
@@ -1373,7 +1376,7 @@ function placePending() {
   function hideOverlay(id) { var el = $(id); if (el) el.classList.add('hidden'); }
 
   function overlayOpen() {
-    var ids = ['ovMenu', 'ovSettings', 'ovOnline', 'ovRules', 'ovOver'];
+    var ids = ['ovMenu', 'ovSettings', 'ovOnline', 'ovRoomRules', 'ovRules', 'ovOver'];
     for (var i = 0; i < ids.length; i++) {
       var el = $(ids[i]);
       if (el && !el.classList.contains('hidden')) return true;
@@ -1460,21 +1463,96 @@ function placePending() {
   function openSettings() {}
   /* ---------------- 事件绑定 ---------------- */
 
+  // 建房前把「这一刻会发给服务端的设置」原样摊开：房建好后这些就锁死了
+  function roomRulesBundle() {
+    sanitizeSettings();
+    var st = app.settings;
+    return {
+      st: st,
+      mp: mapFromSettings(),
+      rf: rulesFromSettings(),
+      ids: (window.MODS && window.MODS.enabledIds) ? window.MODS.enabledIds() : [],
+      defs: (window.MODS && window.MODS.enabledDefs) ? window.MODS.enabledDefs() : []
+    };
+  }
+
+  function roomRulesPayload(b) {
+    return {
+      side: b.mp.side,
+      density: b.mp.density,
+      seed: b.mp.seed,
+      modIds: b.ids,
+      lastBonus: b.st.lastBonus,
+      rules: { firstPlayer: b.st.firstPlayer, energyPerTurn: b.st.energy, baseHp: b.st.baseHp },
+      types: b.st.types
+    };
+  }
+
+  function roomRulesHtml(b) {
+    var st = b.st, mp = b.mp, rf = b.rf;
+    var side = Math.max(3, Math.min(8, Number(mp.side) || 5));
+    var cells = 3 * side * (side - 1) + 1;
+    var pct = Math.round((Number(mp.density) || 0) * 100);
+    var mapLine = (mp.label ? '默认地图「' + mp.label + '」' : '随机地图') +
+      ' · 边长 ' + side + '（' + cells + ' 格） · 障碍' + (pct ? ' 约 ' + pct + '%' : ' 无');
+    var firstIsRed = Number(st.firstPlayer) === 1;
+    var firstSeat = firstIsRed ? 1 : 0;
+    var first = firstIsRed ? '赤方' : '青方';
+    var second = firstIsRed ? '青方' : '赤方';
+    // 建房的人坐 0 号位（青方）
+    var meSecond = firstSeat !== 0;
+    var rows = [
+      ['地图', mapLine],
+      ['先后手', first + '先手' + (meSecond ? '（你坐' + second + '，后手）' : '（你坐' + first + '，先手）')],
+      ['费用', '每回合 ' + rf.energyPerTurn + ' 点；' + second + '首回合 ' + rf.firstTurnEnergy[1 - rf.firstPlayer] + ' 点（补偿 +' + st.lastBonus + '）'],
+      ['大本营', rf.baseHp + ' 血：一次结算打满 ' + rf.baseHp + ' 点伤害才摧毁']
+    ].map(function (r) {
+      return '<div class="rr-row"><span class="rr-k">' + r[0] + '</span><span class="rr-v">' + r[1] + '</span></div>';
+    }).join('');
+
+    var modById = {};
+    b.defs.forEach(function (d) { modById[d.id] = d; });
+    var units = (ENGINE.ALL_TYPE_LIST || ENGINE.TYPE_LIST).map(function (id) {
+      var base = ENGINE.TYPES[id] || {};
+      var t = (st.types && st.types[id]) || base;
+      var summon = !!base.noDeploy;
+      return '<div class="rr-unit' + (summon ? ' summon' : '') + '"><b>' + (base.glyph || '?') +
+        '</b><span>' + (base.name || id) + '</span><i>' + t.hp + '血 · ' + t.atk + '攻 · ' +
+        t.range + '射 · ' + (summon ? '召唤' : t.cost + '费') + '</i></div>';
+    });
+    b.ids.forEach(function (id) {
+      var d = modById[id];
+      if (!d) return;
+      units.push('<div class="rr-unit mod"><b>' + (d.glyph || '?') + '</b><span>' + d.name +
+        '</span><i>' + d.hp + '血 · ' + d.atk + '攻 · ' + d.range + '射 · ' + d.cost + '费</i></div>');
+    });
+
+    return rows +
+      '<div class="rr-head">兵种数值</div>' +
+      '<div class="rr-units">' + units.join('') + '</div>' +
+      '<p class="rr-note">联机时这些数值由服务端再校验一遍，超出范围的会被夹回合法区间；' +
+      '自建棋子只传编号，定义从服务器取，所以两边看到的是同一个兵。</p>';
+  }
+
+  function openRoomRules() {
+    var b = roomRulesBundle();
+    $('roomRulesBody').innerHTML = roomRulesHtml(b);
+    app.pendingRoom = roomRulesPayload(b);
+    showOverlay('ovRoomRules');
+  }
+
   function bindEvents() {
 
-    $('btnCreateRoom').addEventListener('click', function () {
-      sanitizeSettings();
-      var st = app.settings;
-      var mp = mapFromSettings();
-      Net.create({
-        side: mp.side,
-        density: mp.density,
-        seed: mp.seed,
-        modIds: (window.MODS && window.MODS.enabledIds) ? window.MODS.enabledIds() : [],
-        lastBonus: st.lastBonus,
-        rules: { firstPlayer: st.firstPlayer, energyPerTurn: st.energy, baseHp: st.baseHp },
-        types: st.types
-      });
+    $('btnCreateRoom').addEventListener('click', function () { openRoomRules(); });
+    $('btnRoomRulesCancel').addEventListener('click', function () {
+      app.pendingRoom = null;
+      hideOverlay('ovRoomRules');
+    });
+    $('btnRoomRulesOk').addEventListener('click', function () {
+      var payload = app.pendingRoom || roomRulesPayload(roomRulesBundle());
+      app.pendingRoom = null;
+      hideOverlay('ovRoomRules');
+      Net.create(payload);
     });
     $('btnJoinRoom').addEventListener('click', function () { Net.join($('inpCode').value); });
     $('inpCode').addEventListener('keydown', function (e) {
@@ -1486,8 +1564,14 @@ function placePending() {
     $('btnOnlineBack').addEventListener('click', function () {
       Net.leave();
       app.game = null;
+      app.pendingRoom = null;
+      hideOverlay('ovRoomRules');
       hideOverlay('ovOnline');
       location.href = 'index.html';
+    });
+
+    $('ovRoomRules').addEventListener('click', function (e) {
+      if (e.target === this) { app.pendingRoom = null; hideOverlay('ovRoomRules'); }
     });
 
     $('btnMenu').addEventListener('click', goMenu);
@@ -1615,7 +1699,12 @@ function placePending() {
         return;
       }
       if (overlayOpen()) {
-        if (key === 'Escape') { hideOverlay('ovRules'); hideOverlay('ovSettings'); hideOverlay('ovOnline'); }
+        if (key === 'Escape') {
+          hideOverlay('ovRoomRules');
+          hideOverlay('ovRules');
+          hideOverlay('ovSettings');
+          hideOverlay('ovOnline');
+        }
         return;
       }
       if (app.mode === 'ai' && !isMyTurn()) return;

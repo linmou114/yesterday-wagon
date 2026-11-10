@@ -363,7 +363,7 @@ function sanitizeSettings(raw) {
   const seed = Number(s.seed);
   return {
     side: clamp(s.side, 3, 8, 5),
-    density: clamp(s.density, 0, 0.4, 0.14),
+    density: clampFrac(s.density, 0, 0.4, 0.14),
     seed: isFinite(seed) && seed > 0 ? (seed >>> 0) : null,
     rules,
     types,
@@ -375,6 +375,13 @@ function clamp(v, min, max, fallback) {
   const n = Number(v);
   if (!isFinite(n)) return fallback;
   return Math.min(max, Math.max(min, Math.round(n)));
+}
+
+// 小数用的夹取：density 是 0~0.4 的比例，用 clamp 会被 Math.round 抹成 0（整张图空掉）
+function clampFrac(v, min, max, fallback) {
+  const n = Number(v);
+  if (!isFinite(n)) return fallback;
+  return Math.min(max, Math.max(min, Math.round(n * 1000) / 1000));
 }
 
 function send(ws, msg) {
