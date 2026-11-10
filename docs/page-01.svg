@@ -1,22 +1,40 @@
-﻿<svg xmlns="http://www.w3.org/2000/svg" width="960" height="540" viewBox="0 0 960 540">
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="540" viewBox="0 0 960 540">
   <rect x="0" y="0" width="960" height="540" fill="#0A1018"/>
-  <circle cx="742" cy="270" r="240" fill="#2DD4BF" fill-opacity="0.04"/>
-  <circle cx="742" cy="270" r="150" fill="#2DD4BF" fill-opacity="0.04"/>
 
-  <!-- 右侧：七格花形棋盘片段 -->
-  <g transform="translate(742,270)" fill="none" stroke="#22303F" stroke-width="1.6">
-    <polygon points="0,-46 40,-23 40,23 0,46 -40,23 -40,-23"/>
-    <polygon points="40,-69 80,-46 80,0 40,23 0,0 0,-46"/>
-    <polygon points="-40,-69 0,-46 0,0 -40,23 -80,0 -80,-46"/>
-    <polygon points="80,0 120,23 120,69 80,92 40,69 40,23"/>
-    <polygon points="-80,0 -40,23 -40,69 -80,92 -120,69 -120,23"/>
-    <polygon points="0,46 40,69 40,115 0,138 -40,115 -40,69"/>
-  </g>
-  <g transform="translate(742,270)">
-    <polygon points="40,-69 80,-46 80,0 40,23 0,0 0,-46" fill="#F43F5E" fill-opacity="0.16" stroke="#F43F5E" stroke-width="2"/>
-    <text x="40" y="-24" font-family="Microsoft YaHei" font-size="26" font-weight="700" fill="#F43F5E" text-anchor="middle" dominant-baseline="middle">坦</text>
-    <polygon points="0,46 40,69 40,115 0,138 -40,115 -40,69" fill="#2DD4BF" fill-opacity="0.14" stroke="#2DD4BF" stroke-width="2"/>
-    <text x="0" y="93" font-family="Microsoft YaHei" font-size="26" font-weight="700" fill="#2DD4BF" text-anchor="middle" dominant-baseline="middle">狙</text>
+  <!-- 背景光晕（两层低透明度实心圆，避免渐变被压平） -->
+  <circle cx="742" cy="268" r="250" fill="#2DD4BF" fill-opacity="0.035"/>
+  <circle cx="742" cy="268" r="160" fill="#2DD4BF" fill-opacity="0.04"/>
+
+  <!-- 右侧：七格花形棋盘（顶点朝上的六边形，邻格偏移 ±80/0、±40/±69） -->
+  <g transform="translate(742,272) scale(1.14)">
+    <g fill="none" stroke="#22303F" stroke-width="1.6" stroke-linejoin="round">
+      <polygon points="80,-46 120,-23 120,23 80,46 40,23 40,-23"/>
+      <polygon points="-80,-46 -40,-23 -40,23 -80,46 -120,23 -120,-23"/>
+      <polygon points="40,23 80,46 80,92 40,115 0,92 0,46"/>
+      <polygon points="-40,23 0,46 0,92 -40,115 -80,92 -80,46"/>
+      <polygon points="40,-115 80,-92 80,-46 40,-23 0,-46 0,-92"/>
+      <polygon points="-40,-115 0,-92 0,-46 -40,-23 -80,-46 -80,-92"/>
+    </g>
+
+    <!-- 空心格中心的小圆点（呼应棋盘上的空格样式） -->
+    <g fill="#33445A">
+      <circle cx="80" cy="0" r="3.2"/>
+      <circle cx="-80" cy="0" r="3.2"/>
+      <circle cx="40" cy="69" r="3.2"/>
+      <circle cx="-40" cy="69" r="3.2"/>
+    </g>
+
+    <!-- 三个已放置的棋子：指（金）、坦（红）、狙（青） -->
+    <g>
+      <polygon points="-40,-115 0,-92 0,-46 -40,-23 -80,-46 -80,-92" fill="#FBBF24" fill-opacity="0.15" stroke="#FBBF24" stroke-width="2" stroke-linejoin="round"/>
+      <text x="-40" y="-68" font-family="Microsoft YaHei" font-size="26" font-weight="700" fill="#FBBF24" text-anchor="middle" dominant-baseline="middle">指</text>
+
+      <polygon points="40,-115 80,-92 80,-46 40,-23 0,-46 0,-92" fill="#F43F5E" fill-opacity="0.15" stroke="#F43F5E" stroke-width="2" stroke-linejoin="round"/>
+      <text x="40" y="-68" font-family="Microsoft YaHei" font-size="26" font-weight="700" fill="#F43F5E" text-anchor="middle" dominant-baseline="middle">坦</text>
+
+      <polygon points="0,-46 40,-23 40,23 0,46 -40,23 -40,-23" fill="#2DD4BF" fill-opacity="0.15" stroke="#2DD4BF" stroke-width="2" stroke-linejoin="round"/>
+      <text x="0" y="1" font-family="Microsoft YaHei" font-size="26" font-weight="700" fill="#2DD4BF" text-anchor="middle" dominant-baseline="middle">狙</text>
+    </g>
   </g>
 
   <!-- 左侧文字 -->
