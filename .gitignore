@@ -9,6 +9,13 @@ tools/_*.js
 *.zip
 data/
 
+# 仓库只放游戏本体：课程报告、答辩材料、开发期截图都留在本地
+docs/
+tools/gen-report.js
+tools/shot-*.png
+tools/preview-*.html
+fix.py
+
 # 答辩材料只在本地保存，不发布到仓库
 docs/答辩*
 docs/昨日圆车-答辩.*
