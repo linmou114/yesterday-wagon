@@ -481,9 +481,11 @@
   };
 
   // 本方本回合还能免费召唤几个奴隶
+  // 名额 = 奴隶主数量 - 本回合已召唤 + 额外赠送的额度（肉鸽「三角贸易」）
   Game.prototype.freeSlavesLeft = function (owner) {
     var used = this.slavesUsed[owner] || 0;
-    return Math.max(0, this.slaverCount(owner) - used);
+    var fromSlaver = Math.max(0, this.slaverCount(owner) - used);
+    return fromSlaver + this.freeTokenLeft(owner, 'slave');
   };
 
   // 奴隶能放的格子：连通块边缘 ∩ 奴隶主周围一圈
@@ -509,7 +511,14 @@
       throw e;
     }
     var p = this.place(owner, 'slave', cellKey, { free: true });
-    this.slavesUsed[owner] = (this.slavesUsed[owner] || 0) + 1;
+    // 先扣「奴隶主」给的名额，扣完了再扣赠送的额度
+    var used = this.slavesUsed[owner] || 0;
+    if (this.slaverCount(owner) - used > 0) {
+      this.slavesUsed[owner] = used + 1;
+    } else {
+      var pk = this.perksOf(owner);
+      pk.freeDeploy.slave = Math.max(0, this.freeTokenLeft(owner, 'slave') - 1);
+    }
     return p;
   };
 
@@ -747,11 +756,12 @@
       if (sd) { cq += sd.q; cr += sd.r; }
     }
     var r = Math.max(0, piece.range || 0);
+    var selfKey = Hex.key(from.q, from.r);   // 炮自己站的那一格永远不在打击范围内
     for (var dq = -r; dq <= r; dq++) {
       for (var dr = -r; dr <= r; dr++) {
         if (Math.abs(dq + dr) > r) continue;
-        if (dq === 0 && dr === 0) continue;
         var key = Hex.key(cq + dq, cr + dr);
+        if (key === selfKey) continue;
         if (this.board.cells.has(key)) out.add(key);
       }
     }
