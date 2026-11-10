@@ -1,4 +1,4 @@
-﻿/* =========================================================
+/* =========================================================
  * main.js —— 界面与交互
  * ========================================================= */
 (function () {
@@ -472,39 +472,77 @@
     clearAITimer();
     if (app.mode !== 'ai' || !app.game || app.game.over) return;
     if (app.game.active !== app.aiSeat) return;
-    app.aiTimer = setTimeout(aiStep, 500);
+    app.aiKey = null;                 // 新回合：允许重新「想」一次
+    app.aiTimer = setTimeout(aiStep, 240);
   }
 
-  // AI 一次只做一件事，这样每一步都看得见
+  // AI 的节奏：每个回合先想 1~3 秒（迭代加深就在这段时间里跑），
+  // 同一回合的后续动作（补子、结算）快一些，免得一个回合等太久。
   function aiStep() {
     app.aiTimer = null;
     var g = app.game;
     if (app.mode !== 'ai' || !g || g.over || g.active !== app.aiSeat) return;
 
-    if (g.energy > 0 && window.AI) {
-      var mv = window.AI.chooseMove(g);
-      if (mv) {
-        var t = g.types[mv.type];
-        if (t && g.energy >= t.cost) {
-          try {
-            g.place(g.active, mv.type, mv.cell);
-            addLog(g.players[g.active].name + ' 部署 ' + t.name, 'place');
-            refresh();
-            app.aiTimer = setTimeout(aiStep, 320);
-            return;
-          } catch (e) { /* 落子失败就走下一步 */ }
-        }
+    var key = g.turn + '|' + g.active;
+    var first = (app.aiKey !== key);
+    if (first) {
+      app.aiKey = key;
+      app.aiThinkMs = 1000 + Math.floor(Math.random() * 2000);   // 1~3 秒
+      toast(g.players[g.active].name + ' 思考中…');
+    } else {
+      app.aiThinkMs = 430;
+    }
+
+    var t0 = Date.now();
+    var act = null;
+    if (window.AI) {
+      // 预算用完就交出当前最好的一步（迭代加深），所以给多少时间就用多少
+      act = window.AI.bestAction(g, { budget: Math.max(220, app.aiThinkMs - 140) });
+    }
+    var rest = app.aiThinkMs - (Date.now() - t0);
+    app.aiTimer = setTimeout(function () { aiAct(act); }, Math.max(0, rest));
+  }
+
+  // 把 AI 选好的那一步真正执行掉，然后接着算下一步
+  function aiAct(act) {
+    app.aiTimer = null;
+    var g = app.game;
+    if (app.mode !== 'ai' || !g || g.over || g.active !== app.aiSeat) return;
+
+    if (act && act.kind === 'place') {
+      var t = g.types[act.type];
+      var placed = false;
+      try {
+        g.place(g.active, act.type, act.cell, act.dir == null ? {} : { dir: act.dir });
+        placed = true;
+      } catch (e) { placed = false; }
+      if (placed) {
+        addLog(g.players[g.active].name + ' 部署 ' + (t ? t.name : act.type), 'place');
+        refresh();
+        app.aiTimer = setTimeout(aiStep, 250);
+        return;
       }
     }
 
-    if (window.AI && window.AI.shouldResolve(g)) {
+    if (act && act.kind === 'slave') {
+      var ok = false;
+      try { g.placeSlave(g.active, act.cell); ok = true; } catch (e) { ok = false; }
+      if (ok) {
+        addLog(g.players[g.active].name + ' 召唤 奴隶', 'place');
+        refresh();
+        app.aiTimer = setTimeout(aiStep, 220);
+        return;
+      }
+    }
+
+    if (act && act.kind === 'resolve') {
       var res;
       try { res = g.resolve(); } catch (e) { res = null; }
       if (res) {
         renderResolveResult(res);
         refresh();
         if (g.over) { setTimeout(showGameOver, 620); return; }
-        app.aiTimer = setTimeout(aiStep, 460);
+        app.aiTimer = setTimeout(aiStep, 430);
         return;
       }
     }
