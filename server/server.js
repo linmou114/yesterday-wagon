@@ -16,6 +16,7 @@ const path = require('path');
 const crypto = require('crypto');
 const { WebSocketServer } = require('ws');
 const ENGINE = require('../js/engine.js');
+const ROGUE = require('../js/rogue.js');
 
 const PORT = Number(process.env.PORT) || 3000;
 const ROOT = path.join(__dirname, '..');
@@ -367,7 +368,8 @@ function sanitizeSettings(raw) {
     seed: isFinite(seed) && seed > 0 ? (seed >>> 0) : null,
     rules,
     types,
-    modIds
+    modIds,
+    rogue: !!s.rogue
   };
 }
 
@@ -396,6 +398,11 @@ function broadcast(room, msg) {
 }
 
 function pushState(room, extra) {
+  // 肉鸽模式：发状态前先把「这一回合的三选一」发好，双方看到的是同一组牌
+  const g = room.game;
+  if (g.rogue && !g.over) {
+    try { ROGUE.ensureOffer(g, g.active); } catch (e) {}
+  }
   const msg = {
     t: 'state',
     state: room.game.toJSON(),
@@ -480,7 +487,8 @@ function doCreate(ws, msg) {
     density: s.density,
     rules: s.rules,
     types: s.types,
-    seed: s.seed || Math.floor(Math.random() * 1e9)
+    seed: s.seed || Math.floor(Math.random() * 1e9),
+    rogue: s.rogue
   });
 
   const token = newToken();
@@ -634,6 +642,20 @@ function doAct(ws, msg) {
     g.over = true;
     g.winner = 1 - seat;
     event = { kind: 'resign', active: seat, winner: g.winner };
+  } else if (action.kind === 'perk') {
+    if (!g.rogue) return send(ws, { t: 'err', msg: '不是肉鸽模式' });
+    const res = ROGUE.pick(g, seat, String(action.id || ''), action.args || {});
+    if (!res.ok) return send(ws, { t: 'err', msg: res.msg || '这张卡用不了' });
+    event = { kind: 'perk', owner: seat, id: res.card.id, name: res.card.name };
+  } else if (action.kind === 'perkSkip') {
+    if (!g.rogue) return send(ws, { t: 'err', msg: '不是肉鸽模式' });
+    ROGUE.skip(g, seat);
+    event = { kind: 'perkSkip', owner: seat };
+  } else if (action.kind === 'promote') {
+    if (!g.rogue) return send(ws, { t: 'err', msg: '不是肉鸽模式' });
+    const res = ROGUE.promote(g, seat, String(action.cell || ''), String(action.to || ''));
+    if (!res.ok) return send(ws, { t: 'err', msg: res.msg || '无法晋升' });
+    event = { kind: 'promote', owner: seat, cell: String(action.cell || ''), to: String(action.to || '') };
   } else {
     return send(ws, { t: 'err', msg: '未知操作' });
   }

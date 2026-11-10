@@ -73,7 +73,7 @@
     if (params.resume === '1' && restoreResume()) return;
     if (params.mode === 'tutorial') { startTutorial(); return; }
     if (params.mode === 'online') { openOnline(params.code); return; }
-    if (params.mode === 'ai' || params.mode === 'local') { startGame(params.mode); return; }
+    if (params.mode === 'ai' || params.mode === 'local' || params.mode === 'rogue') { startGame(params.mode); return; }
 
     // 没有参数（直接打开 game.html）→ 回菜单
     location.replace('index.html');
@@ -122,7 +122,7 @@
     try {
       app.mode = (data.mode === 'ai') ? 'ai' : 'local';
       app.game = ENGINE.Game.fromJSON(data.game);
-      if (app.mode === 'ai') {
+      if (isAIMode()) {
         app.humanSeat = app.game.firstPlayer;
         app.aiSeat = 1 - app.game.firstPlayer;
       }
@@ -208,12 +208,13 @@
       seed: map.seed,
       rng: rng,
       rules: rules,
-      types: buildTypes()
+      types: buildTypes(),
+      rogue: app.mode === 'rogue'
     });
     app.mapLabel = map.label;
 
     // 单人模式：人执先手方，AI 执后手方
-    if (app.mode === 'ai') {
+    if (isAIMode()) {
       app.humanSeat = app.game.firstPlayer;
       app.aiSeat = 1 - app.game.firstPlayer;
     }
@@ -239,7 +240,8 @@
     hideOverlay('ovOnline');
 
     var g = app.game;
-    addLog('模式：' + (app.mode === 'ai' ? '单人 · 对战 AI（你执' + g.players[app.humanSeat].name + '）' : '本地双人'), 'sys');
+    addLog('模式：' + (app.mode === 'rogue' ? '肉鸽 · 对战 AI（你执' + g.players[app.humanSeat].name + '）'
+      : (isAIMode() ? '单人 · 对战 AI（你执' + g.players[app.humanSeat].name + '）' : '本地双人')), 'sys');
     addLog('地图：' + (map.label ? ('默认地图「' + map.label + '」') : '随机地图') +
       ' · 边长 ' + g.side + '（' + g.board.count + ' 格 / ' + g.board.obstacles + ' 处障碍）', 'sys');
     addLog('先手：' + g.players[g.firstPlayer].name +
@@ -276,6 +278,7 @@
     renderTurnUI();
     updateInspectCard();
     checkTutorial();
+    maybeOfferView();
 
     // 被完全堵死时提醒一下，别让人干坐着
     var stamp = g.turn + ':' + g.active;
@@ -333,6 +336,11 @@
           '<div class="stat"><span>战果</span><b>' + st.kills + ' 杀 · ' + st.lost + ' 损</b></div>' +
           '<div class="pips">' + pips + '</div>' +
           comp +
+          perkChips(g, i) +
+          ((g.rogue && window.ROGUE && g.perksOf(i).promoteLeft > 0 && !g.over)
+            ? ('<button type="button" class="perk-promote" data-promote="1">晋升 ×' +
+                g.perksOf(i).promoteLeft + '</button>')
+            : '') +
         '</div>' +
         '<div class="panel-state">' + stateText + '</div>';
     }
@@ -454,13 +462,15 @@
 
   /* ---------------- 模式与回合控制 ---------------- */
 
+  function isAIMode() { return app.mode === 'ai' || app.mode === 'rogue'; }
+
   function isMyTurn() {
     // 教学模式：永远由玩家操作
     if (app.mode === 'tutorial') return !!(app.game && !app.game.over);
     var g = app.game;
     if (!g || g.over) return false;
     if (app.mode === 'online') return g.active === app.mySeat;
-    if (app.mode === 'ai') return g.active === app.humanSeat;
+    if (isAIMode()) return g.active === app.humanSeat;
     return true;
   }
 
@@ -470,7 +480,7 @@
 
   function maybeAITurn() {
     clearAITimer();
-    if (app.mode !== 'ai' || !app.game || app.game.over) return;
+    if (!isAIMode() || !app.game || app.game.over) return;
     if (app.game.active !== app.aiSeat) return;
     app.aiKey = null;                 // 新回合：允许重新「想」一次
     app.aiTimer = setTimeout(aiStep, 240);
@@ -481,7 +491,7 @@
   function aiStep() {
     app.aiTimer = null;
     var g = app.game;
-    if (app.mode !== 'ai' || !g || g.over || g.active !== app.aiSeat) return;
+    if (!isAIMode() || !g || g.over || g.active !== app.aiSeat) return;
 
     var key = g.turn + '|' + g.active;
     var first = (app.aiKey !== key);
@@ -500,7 +510,32 @@
   function aiThink() {
     app.aiTimer = null;
     var g = app.game;
-    if (app.mode !== 'ai' || !g || g.over || g.active !== app.aiSeat) return;
+    if (!isAIMode() || !g || g.over || g.active !== app.aiSeat) return;
+
+    // 肉鸽：先让电脑选一张能力卡，再算这一步
+    if (g.rogue && window.ROGUE) {
+      var pk = g.perksOf(app.aiSeat);
+      if (g.turn >= ROGUE.FIRST_TURN && pk.pickedTurn !== g.turn) {
+        var got = ROGUE.aiPick(g, app.aiSeat);
+        if (got) {
+          addLog(g.players[app.aiSeat].name + ' 获得能力「' + got.name + '」', 'perk');
+          toast('电脑拿了「' + got.name + '」');
+        }
+      }
+      // 有晋升额度就用掉：先把步兵/奴隶改成炮兵，有炮了再改坦克
+      var guard = 0;
+      while (g.perksOf(app.aiSeat).promoteLeft > 0 && guard++ < 4) {
+        var pool = g.pieces.filter(function (p) {
+          return p.owner === app.aiSeat && (p.kind === 'infantry' || p.kind === 'slave');
+        });
+        if (!pool.length) break;
+        var hasArt = g.pieces.some(function (p) { return p.owner === app.aiSeat && p.kind === 'artillery'; });
+        var to = hasArt ? 'tank' : 'artillery';
+        if (!ROGUE.promote(g, app.aiSeat, pool[0].key, to).ok) break;
+        addLog(g.players[app.aiSeat].name + ' 晋升 1 个棋子为 ' + g.types[to].name, 'perk');
+      }
+      refresh();
+    }
 
     var t0 = Date.now();
     var act = null;
@@ -516,7 +551,7 @@
   function aiAct(act) {
     app.aiTimer = null;
     var g = app.game;
-    if (app.mode !== 'ai' || !g || g.over || g.active !== app.aiSeat) return;
+    if (!isAIMode() || !g || g.over || g.active !== app.aiSeat) return;
 
     if (act && act.kind === 'place') {
       var t = g.types[act.type];
@@ -616,6 +651,10 @@ function placePending() {
   function handleCellClick(cell) {
     var g = app.game;
     if (!g || g.over) return;
+
+    // 肉鸽：正在为能力卡选目标
+    if (app.perkMode) { perkClick(cell); return; }
+    if (app.promoMode) { pickPromoteTarget(cell); return; }
 
     // 正在为狙击兵选方向：这一下是确认
     if (app.pending) {
@@ -1095,6 +1134,23 @@ function placePending() {
       return;
     }
 
+    if (ev.kind === 'perk') {
+      addLog(g.players[ev.owner].name + ' 获得能力「' + (ev.name || '') + '」', 'perk');
+      if (ev.owner === app.mySeat) toast('获得能力：' + (ev.name || ''));
+      return;
+    }
+
+    if (ev.kind === 'perkSkip') {
+      addLog(g.players[ev.owner].name + ' 这回合没有拿能力卡', 'sys');
+      return;
+    }
+
+    if (ev.kind === 'promote') {
+      var pt = typesOf()[ev.to];
+      addLog(g.players[ev.owner].name + ' 晋升 1 个棋子为 ' + (pt ? pt.name : '新兵种'), 'perk');
+      return;
+    }
+
     if (ev.kind === 'end') {
       var ended = ev.active;
       if (ev.next != null && ev.next === app.mySeat) toast('轮到你了');
@@ -1338,7 +1394,7 @@ function placePending() {
       return;
     }
 
-    if (app.mode === 'ai') {
+    if (isAIMode()) {
       var accept = window.AI ? window.AI.acceptsDraw(g, app.aiSeat) : true;
       if (accept) {
         clearAITimer();
@@ -1376,7 +1432,7 @@ function placePending() {
   function hideOverlay(id) { var el = $(id); if (el) el.classList.add('hidden'); }
 
   function overlayOpen() {
-    var ids = ['ovMenu', 'ovSettings', 'ovOnline', 'ovRoomRules', 'ovRules', 'ovOver'];
+    var ids = ['ovMenu', 'ovSettings', 'ovOnline', 'ovRoomRules', 'ovRules', 'ovOver', 'ovPerk'];
     for (var i = 0; i < ids.length; i++) {
       var el = $(ids[i]);
       if (el && !el.classList.contains('hidden')) return true;
@@ -1471,6 +1527,7 @@ function placePending() {
       st: st,
       mp: mapFromSettings(),
       rf: rulesFromSettings(),
+      rogue: !!app.rogueToggle,
       ids: (window.MODS && window.MODS.enabledIds) ? window.MODS.enabledIds() : [],
       defs: (window.MODS && window.MODS.enabledDefs) ? window.MODS.enabledDefs() : []
     };
@@ -1483,6 +1540,7 @@ function placePending() {
       seed: b.mp.seed,
       modIds: b.ids,
       lastBonus: b.st.lastBonus,
+      rogue: !!b.rogue,
       rules: { firstPlayer: b.st.firstPlayer, energyPerTurn: b.st.energy, baseHp: b.st.baseHp },
       types: b.st.types
     };
@@ -1503,6 +1561,8 @@ function placePending() {
     var meSecond = firstSeat !== 0;
     var rows = [
       ['地图', mapLine],
+      ['模式', b.rogue ? '<b class="rr-rogue">肉鸽</b>：第 3 回合起，每回合三选一能力卡'
+        : '标准对战（<button type="button" class="rr-toggle" data-rogue-toggle="1">改成肉鸽</button>）'],
       ['先后手', first + '先手' + (meSecond ? '（你坐' + second + '，后手）' : '（你坐' + first + '，先手）')],
       ['费用', '每回合 ' + rf.energyPerTurn + ' 点；' + second + '首回合 ' + rf.firstTurnEnergy[1 - rf.firstPlayer] + ' 点（补偿 +' + st.lastBonus + '）'],
       ['大本营', rf.baseHp + ' 血：一次结算打满 ' + rf.baseHp + ' 点伤害才摧毁']
@@ -1539,6 +1599,250 @@ function placePending() {
     $('roomRulesBody').innerHTML = roomRulesHtml(b);
     app.pendingRoom = roomRulesPayload(b);
     showOverlay('ovRoomRules');
+  }
+
+  function toggleRoomRogue() {
+    app.rogueToggle = !app.rogueToggle;
+    openRoomRules();
+  }
+
+  /* ---------------- 肉鸽：能力卡 ---------------- */
+
+  function rogueOn() { return !!(app.game && app.game.rogue && window.ROGUE); }
+
+  // 当前操作的一方（联机时是自己，其余模式是行动方）
+  function seatNow() {
+    var g = app.game;
+    if (!g) return -1;
+    if (app.mode === 'online') return app.mySeat;
+    return g.active;
+  }
+
+  function escHtml(s) {
+    return String(s == null ? '' : s)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  }
+
+  function rarityOf(c) {
+    var R = window.ROGUE;
+    return (R && R.RARITY && R.RARITY[c.rarity]) || { label: '', weight: 0, color: '#93A4B8' };
+  }
+
+  // 轮到谁、且这回合还没选过 → 弹三选一
+  function maybeOfferView() {
+    if (!rogueOn() || app.game.over) return;
+    var g = app.game;
+    var seat = seatNow();
+    if (seat < 0 || !isMyTurn() || g.active !== seat) { hideOverlay('ovPerk'); return; }
+    var offer = (app.mode === 'online')
+      ? (g.perksOf(seat).offer || null)
+      : ROGUE.ensureOffer(g, seat);
+    if (!offer || !offer.length) { hideOverlay('ovPerk'); return; }
+    var stamp = seat + '|' + g.turn;
+    if (app.perkStamp === stamp) {
+      // 弹过一次被关掉了：留一个小入口，别让玩家忘了这回合还能选
+      var ov = $('ovPerk');
+      if (ov && ov.classList.contains('hidden') && !app.perkMode && !app.promoMode) {
+        showPerkBar('这回合还能选一张能力卡' +
+          '<button type="button" class="perk-cancel" data-reperk="1">选卡</button>');
+      }
+      return;
+    }
+    app.perkStamp = stamp;
+    renderPerkModal(offer, seat);
+    showOverlay('ovPerk');
+  }
+
+  function renderPerkModal(offer, seat) {
+    var g = app.game;
+    var sub = $('perkSub');
+    if (sub) {
+      sub.textContent = '第 ' + g.turn + ' 回合 · ' + g.players[seat].name +
+        ' 从下面三张里选一张（选中立刻生效）';
+    }
+    var html = '';
+    offer.forEach(function (id) {
+      var c = ROGUE.card(id);
+      if (!c) return;
+      var r = rarityOf(c);
+      var ok = ROGUE.canTake(g, seat, c);
+      html += '<button type="button" class="perk-card' + (ok ? '' : ' dead') +
+        (c.rarity === 'ultra' ? ' ultra' : '') + '" data-card="' + c.id + '"' +
+        ' style="border-color:' + r.color + '33">' +
+        '<span class="perk-rar" style="color:' + r.color + '">' + r.label + '</span>' +
+        '<b class="perk-name">' + escHtml(c.name) + '</b>' +
+        '<span class="perk-desc">' + escHtml(c.desc) + '</span>' +
+        '<span class="perk-go">' + (ok ? '选它' : '现在没有目标') + '</span>' +
+        '</button>';
+    });
+    var box = $('perkCards');
+    if (box) box.innerHTML = html;
+  }
+
+  function perkHint(c) {
+    switch (c.need) {
+      case 'own': return '点一个自己的棋子';
+      case 'tank': return '点一个自己的坦克';
+      case 'artillery': return '点一个自己的炮兵';
+      case 'cell': return '点棋盘上任意一个空格';
+      case 'tankInf': return '先点自己的坦克，再点贴着它的步兵';
+      case 'dir':
+        var t = typesOf()[c.kind] || {};
+        return '点一个自己的' + (t.name || '棋子') + '，然后选方向';
+      default: return '';
+    }
+  }
+
+  function choosePerk(id) {
+    var g = app.game, seat = seatNow();
+    var c = ROGUE.card(id);
+    if (!g || seat < 0 || !c) return;
+    if (!ROGUE.canTake(g, seat, c)) { toast('这张卡现在没有可选的目标'); return; }
+    if (!c.need) { commitPerk(id, {}); return; }
+    app.perkMode = { id: id, need: c.need, kind: c.kind || null, stage: 0, key: null };
+    hideOverlay('ovPerk');
+    showPerkBar(escHtml(perkHint(c)) + cancelBtnHtml());
+    refresh();
+  }
+
+  function cancelBtnHtml() { return '<button type="button" class="perk-cancel" data-cancel="1">取消</button>'; }
+
+  function dirBtnHtml() {
+    var names = ['右', '右上', '左上', '左', '左下', '右下'];
+    var out = '';
+    for (var i = 0; i < 6; i++) {
+      out += '<button type="button" class="perk-dir" data-dir="' + i + '">' + names[i] + '</button>';
+    }
+    return out;
+  }
+
+  function commitPerk(id, args) {
+    var g = app.game, seat = seatNow();
+    var c = ROGUE.card(id);
+    app.perkMode = null;
+    hidePerkBar();
+    if (app.mode === 'online') {
+      Net.act({ kind: 'perk', id: id, args: args || {} });
+      return;
+    }
+    var res = ROGUE.pick(g, seat, id, args);
+    if (!res.ok) { toast(res.msg || '无法选择这张卡'); refresh(); return; }
+    addLog(g.players[seat].name + ' 获得能力「' + c.name + '」', 'perk');
+    toast('获得能力：' + c.name);
+    refresh();
+  }
+
+  // 能力卡要求选目标时的点击处理
+  function perkClick(cell) {
+    var g = app.game, seat = seatNow(), m = app.perkMode;
+    if (!m || !cell) return;
+    var p = g.pieceAt(cell.key);
+    var mine = !!(p && p.owner === seat && p.kind !== 'base');
+
+    if (m.need === 'cell') {
+      if (p) { toast('要选一个空格'); return; }
+      commitPerk(m.id, { key: cell.key });
+      return;
+    }
+
+    if (m.need === 'dir') {
+      if (!mine || (m.kind && p.kind !== m.kind)) { toast(perkHint(ROGUE.card(m.id))); return; }
+      m.stage = 1;
+      m.key = cell.key;
+      showPerkBar('已选「' + escHtml(g.types[p.kind].name) + '」，选一个方向' + dirBtnHtml() + cancelBtnHtml());
+      refresh();
+      return;
+    }
+
+    if (m.need === 'tankInf') {
+      if (m.stage === 0) {
+        if (!mine || p.kind !== 'tank') { toast('先点一个自己的坦克'); return; }
+        m.stage = 1; m.key = cell.key;
+        showPerkBar('再点一个贴着这辆坦克的自己的步兵' + cancelBtnHtml());
+        refresh();
+        return;
+      }
+      if (!mine || p.kind !== 'infantry') { toast('第二个要选自己的步兵'); return; }
+      if (Hex.distance(Hex.parse(m.key), Hex.parse(cell.key)) !== 1) { toast('步兵要贴着坦克'); return; }
+      commitPerk(m.id, { key: m.key, target: cell.key });
+      return;
+    }
+
+    // own / tank / artillery
+    if (!mine) { toast('要选自己的棋子'); return; }
+    if (m.need === 'tank' && p.kind !== 'tank') { toast('要选坦克'); return; }
+    if (m.need === 'artillery' && p.kind !== 'artillery') { toast('要选炮兵'); return; }
+    commitPerk(m.id, { key: cell.key });
+  }
+
+  function showPerkBar(html) {
+    var bar = $('perkBar');
+    var txt = $('perkBarText');
+    if (!bar || !txt) return;
+    txt.innerHTML = html;
+    bar.classList.remove('hidden');
+  }
+
+  function hidePerkBar() {
+    var bar = $('perkBar');
+    if (bar) bar.classList.add('hidden');
+  }
+
+  function cancelPerk() {
+    app.perkMode = null;
+    app.promoMode = false;
+    app.promoPick = null;
+    hidePerkBar();
+    refresh();
+  }
+
+  // 晋升：点己方棋子 → 点兵种卡
+  function startPromote() {
+    var g = app.game, seat = seatNow();
+    var pk = g.perksOf(seat);
+    if (!(pk.promoteLeft > 0)) { toast('没有可用的晋升次数'); return; }
+    app.promoPick = null;
+    app.promoMode = true;
+    app.perkMode = null;
+    showPerkBar('晋升 ×' + pk.promoteLeft + '：先点一个自己的棋子，再点下面的兵种卡' + cancelBtnHtml());
+    refresh();
+  }
+
+  function pickPromoteTarget(cell) {
+    var g = app.game, seat = seatNow();
+    var p = g.pieceAt(cell.key);
+    if (!p || p.owner !== seat || p.kind === 'base') { toast('要选自己的棋子'); return; }
+    app.promoPick = cell.key;
+    showPerkBar('已选「' + escHtml(g.types[p.kind].name) + '」，点下面的兵种卡把它改造成那个兵种' + cancelBtnHtml());
+    refresh();
+  }
+
+  function commitPromote(typeId) {
+    var g = app.game, seat = seatNow();
+    var cell = app.promoPick;
+    app.promoPick = null;
+    hidePerkBar();
+    if (app.mode === 'online') { Net.act({ kind: 'promote', cell: cell, to: typeId }); return; }
+    var res = ROGUE.promote(g, seat, cell, typeId);
+    if (!res.ok) { toast(res.msg || '无法晋升'); refresh(); return; }
+    addLog(g.players[seat].name + ' 晋升 1 个棋子为 ' + (typesOf()[typeId] || {}).name, 'perk');
+    refresh();
+  }
+
+  // 面板里的「已获能力」小标签
+  function perkChips(g, owner) {
+    if (!g.rogue || !window.ROGUE) return '';
+    var list = ROGUE.obtained(g, owner);
+    if (!list.length) return '';
+    var html = '<div class="perk-chips">';
+    list.forEach(function (c) {
+      var r = rarityOf(c);
+      html += '<span class="perk-chip" style="border-color:' + r.color + '55;color:' + r.color +
+        '" title="' + escHtml(c.desc) + '">' + escHtml(c.name) + '</span>';
+    });
+    html += '</div>';
+    return html;
   }
 
   function bindEvents() {
@@ -1623,7 +1927,47 @@ function placePending() {
       toast('已跳到下一关');
     });
     $('btnDraw').addEventListener('click', offerDraw);
-    $('btnDrawAccept').addEventListener('click', function () { answerDraw(true); });
+
+    // 肉鸽：三选一弹层、能力卡取目标、晋升
+    $('perkCards').addEventListener('click', function (e) {
+      var card = e.target.closest ? e.target.closest('[data-card]') : null;
+      if (!card) return;
+      choosePerk(card.getAttribute('data-card'));
+    });
+    $('btnPerkSkip').addEventListener('click', function () {
+      var g = app.game, seat = seatNow();
+      if (!g || seat < 0) return;
+      if (app.mode === 'online') { Net.act({ kind: 'perkSkip' }); hideOverlay('ovPerk'); return; }
+      ROGUE.skip(g, seat);
+      hideOverlay('ovPerk');
+      addLog(g.players[seat].name + ' 这回合没有拿能力卡', 'sys');
+      refresh();
+    });
+    $('perkBar').addEventListener('click', function (e) {
+      var t = e.target;
+      if (t.closest && t.closest('[data-reperk]')) {
+        hidePerkBar();
+        var g2 = app.game, s2 = seatNow();
+        if (g2 && s2 >= 0) {
+          var offer2 = (app.mode === 'online')
+            ? (g2.perksOf(s2).offer || null)
+            : ROGUE.ensureOffer(g2, s2);
+          if (offer2 && offer2.length) { renderPerkModal(offer2, s2); showOverlay('ovPerk'); }
+        }
+        return;
+      }
+      if (t.closest && t.closest('[data-cancel]')) { cancelPerk(); return; }
+      var d = t.closest ? t.closest('[data-dir]') : null;
+      if (d && app.perkMode && app.perkMode.stage === 1) {
+        commitPerk(app.perkMode.id, { key: app.perkMode.key, dir: Number(d.getAttribute('data-dir')) });
+      }
+    });
+    document.addEventListener('click', function (e) {
+      var b = e.target.closest ? e.target.closest('[data-promote]') : null;
+      if (b) { e.preventDefault(); startPromote(); return; }
+      var tg = e.target.closest ? e.target.closest('[data-rogue-toggle]') : null;
+      if (tg) { e.preventDefault(); toggleRoomRogue(); }
+    });    $('btnDrawAccept').addEventListener('click', function () { answerDraw(true); });
     $('btnDrawDecline').addEventListener('click', function () { answerDraw(false); });
 
     els.shop.addEventListener('click', function (e) {
@@ -1631,6 +1975,12 @@ function placePending() {
       if (!card) return;
       var type = card.getAttribute('data-type');
       if (!type || type === '__preview') return;
+
+      // 肉鸽「晋升」：已经选好棋子 → 这张卡就是改造目标
+      if (app.promoPick && app.promoMode) {
+        commitPromote(type);
+        return;
+      }
 
       // 已经选中了一个要替换的棋子 → 这张卡就是「换成它」
       if (app.pendingReplace) {
@@ -1686,6 +2036,11 @@ function placePending() {
     document.addEventListener('keydown', function (e) {
       if (e.target && /input|textarea|select/i.test(e.target.tagName)) return;
       var key = e.key;
+      if (key === 'Escape' && (app.perkMode || app.promoMode)) {
+        cancelPerk();
+        toast('已取消');
+        return;
+      }
       if (key === 'Escape' && app.pendingReplace) {
         app.pendingReplace = null;
         refresh();
@@ -1704,10 +2059,12 @@ function placePending() {
           hideOverlay('ovRules');
           hideOverlay('ovSettings');
           hideOverlay('ovOnline');
+          hideOverlay('ovPerk');
+          app.perkStamp = null;
         }
         return;
       }
-      if (app.mode === 'ai' && !isMyTurn()) return;
+      if (isAIMode() && !isMyTurn()) return;
       if (app.mode === 'online' && !isMyTurn()) return;
       var hot = { '1': 'infantry', '2': 'tank', '3': 'artillery', '4': 'command', '5': 'sniper', '6': 'slaver' };
       var pickId = hot[key] || ((key === 'f' || key === 'F') ? '__slave' : null);
@@ -1746,6 +2103,7 @@ function placePending() {
     resign: resign,
     select: function (type) { app.selected = type; if (app.game) refresh(); else renderShop(); },
     click: function (q, r) { handleCellClick({ q: q, r: r, key: Hex.key(q, r) }); },
+    perk: function (id) { choosePerk(id); },
     toast: function (msg) { toast(msg); },
     save: saveResume,
     restore: restoreResume,

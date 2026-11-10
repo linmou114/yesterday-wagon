@@ -1,6 +1,6 @@
-﻿# 昨日圆车 · Hex Wagon
+# 昨日圆车 · Hex Wagon
 
-六边形双人回合战棋。三种玩法：**本地双人**（同一台设备）、**单人**（内置 AI）、**联机**（建房实时对下）。
+六边形双人回合战棋。四种玩法：**本地双人**（同一台设备）、**单人**（内置 AI）、**联机**（建房实时对下）、**肉鸽**（第 3 回合起每回合三选一能力卡）。
 纯前端 + 一个可选的 Node 服务端；规则只写一份（`js/engine.js`），浏览器和服务器共用。
 
 ---
@@ -44,6 +44,7 @@ npm start            # = node server/server.js，默认 http://localhost:3000
 ├─ js/hex.js           六边形网格数学（浏览器/Node 双用）
 ├─ js/engine.js        规则引擎（浏览器/Node 双用，唯一真相来源）
 ├─ js/ai.js            内置 AI（评估函数 + 迭代加深 α-β 搜索）
+├─ js/rogue.js         肉鸽能力卡（29 张卡的数据与发牌/选卡判定，浏览器/Node 双用）
 ├─ js/tutorial.js      新手教学关卡（7 关，纯数据+判定，可在 Node 测）
 ├─ js/net.js           联机客户端（WebSocket、自动重连、心跳保活）
 ├─ js/settings.js      设置数据模型（两个页面共用）
@@ -71,7 +72,7 @@ npm start            # = node server/server.js，默认 http://localhost:3000
 | 开始菜单 | `/`（`index.html`） | 四种模式入口、快速加入房号、设置、规则、服务器状态与房间数 |
 | 对局 | `/game.html` | 棋盘、双方状态面板、战报、兵种商店、操作按钮 |
 
-对局页靠 URL 参数启动：`game.html?mode=local|ai|online|tutorial`，联机还能带 `&code=1234` 直接进房。
+对局页靠 URL 参数启动：`game.html?mode=local|ai|online|tutorial|rogue`，联机还能带 `&code=1234` 直接进房。
 从对局页点「主菜单」会**把当前棋局存进 sessionStorage**，回到菜单后按钮变成「继续当前对局」。
 
 两个页面共用的部分单独抽了出来：`js/settings.js`（设置数据）和 `js/rules.js`（规则文案），
@@ -86,6 +87,18 @@ npm start            # = node server/server.js，默认 http://localhost:3000
 | 单人 · 对战 AI | 浏览器 | 你执先手，AI 执后手；AI 每步约 0.3 秒，会算"这刀砍下去我亏不亏" |
 | 新手教学 | 浏览器 | 7 个预设小关卡，每关只教一件事：放置 → 费用 → 坦克 → 结算 → 射程 → 断联 → 拆基地 |
 | 联机 | **服务端** | 客户端只发动作，服务端裁定后广播状态；改数值、改胜负都做不到 |
+| 肉鸽 · 能力卡 | 浏览器 / 服务端 | 规则同上，但第 3 回合起每回合三选一能力卡；联机时由服务端发牌，两边牌面一致 |
+
+### 肉鸽模式怎么运作（`js/rogue.js`）
+
+- 卡池 29 张，稀有度 **普通 / 稀有 / 超稀有 = 7 : 2 : 1**，每次抽 3 张不重复。
+- 发牌是**确定性**的：`makeRnd(g, owner)` 用 `seed ^ turn*7919 ^ owner*104729 ^ 已拿张数*15485863` 作种子，
+  所以客户端和服务器各算一次结果相同，联机不需要同步牌面。
+- 卡分三类用法：直接生效（`need: null`）、先点一个己方棋子（`need: 'own'|'tank'|'artillery'|'cell'`）、
+  选棋子后再选方向（`need: 'dir'`）。`can()` 决定这张卡现在能不能用，`apply(g, owner, args)` 落地效果。
+- 状态挂在 `game.perks[owner]`：`cards`（已获得）、`energyPerTurn`、`freeDeploy`（免费部署券）、
+  `promoteLeft`（晋升次数）、`phantoms`（城防炮留下的火力）、`flags`（全局开关，如 `hiddenSnipers`、`slaveAnywhere`）。
+- 这些状态都会进 `toJSON()` / `fromJSON()`，所以联机、断线重连、存读档都不会丢。
 
 ### 联机协议（想改服务端时看这里）
 

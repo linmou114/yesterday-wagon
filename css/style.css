@@ -1508,3 +1508,113 @@ input.num:focus {
   .inspect-card { display: none; }
   .card.poor.sel::after { display: none; }
 }
+
+/* ============ 肉鸽：能力卡 ============ */
+
+.perk-modal { width: min(880px, 94vw); }
+
+.perk-cards {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  margin: 16px 0 6px;
+}
+
+.perk-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 16px 14px 14px;
+  min-height: 190px;
+  text-align: left;
+  border-radius: 14px;
+  border: 1px solid var(--line-strong);
+  background: linear-gradient(180deg, rgba(23, 34, 54, 0.96), rgba(13, 20, 33, 0.96));
+  color: var(--text);
+  cursor: pointer;
+  transition: transform .12s ease, border-color .12s ease, box-shadow .12s ease;
+}
+.perk-card:hover {
+  transform: translateY(-3px);
+  border-color: var(--gold);
+  box-shadow: 0 18px 40px -28px #000, 0 0 0 1px rgba(251, 191, 36, 0.18);
+}
+.perk-card.dead { opacity: .48; cursor: not-allowed; }
+.perk-card.dead:hover { transform: none; border-color: var(--line-strong); box-shadow: none; }
+.perk-card.ultra { background: linear-gradient(180deg, rgba(46, 38, 20, 0.96), rgba(16, 20, 30, 0.96)); }
+
+.perk-rar { font-size: 11px; letter-spacing: .08em; }
+.perk-name { font-size: 17px; line-height: 1.25; }
+.perk-desc { font-size: 12.5px; line-height: 1.6; color: var(--muted); flex: 1; }
+.perk-go {
+  font-size: 11.5px;
+  color: var(--gold);
+  letter-spacing: .06em;
+}
+.perk-card.dead .perk-go { color: var(--muted); }
+.perk-actions { justify-content: flex-end; }
+
+/* 底部操作条：能力卡选目标 / 晋升 / 重新打开三选一 */
+.perk-bar {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 8px 14px;
+  border-radius: 12px;
+  border: 1px solid rgba(251, 191, 36, 0.4);
+  background: rgba(251, 191, 36, 0.07);
+  font-size: 12.5px;
+  color: var(--text);
+}
+.perk-bar.hidden { display: none; }
+.perk-bar-text { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+
+.perk-cancel, .perk-dir {
+  padding: 5px 11px;
+  border-radius: 9px;
+  border: 1px solid var(--line-strong);
+  background: rgba(255, 255, 255, .04);
+  color: var(--text);
+  font-size: 12px;
+  cursor: pointer;
+}
+.perk-cancel:hover, .perk-dir:hover { border-color: var(--gold); color: var(--gold); }
+
+/* 面板里的已获能力 */
+.perk-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 8px;
+}
+.perk-chip {
+  font-size: 10.5px;
+  line-height: 1;
+  padding: 4px 6px;
+  border-radius: 7px;
+  border: 1px solid var(--line-strong);
+  background: rgba(255, 255, 255, .04);
+  cursor: help;
+}
+.perk-promote {
+  margin-top: 8px;
+  width: 100%;
+  padding: 6px 10px;
+  border-radius: 9px;
+  border: 1px solid rgba(251, 191, 36, 0.5);
+  background: rgba(251, 191, 36, .1);
+  color: var(--gold);
+  font-size: 12px;
+  cursor: pointer;
+}
+.perk-promote:hover { background: rgba(251, 191, 36, .18); }
+
+.mode-tag-new {
+  color: #fda4af;
+  border-color: rgba(251, 113, 133, 0.45);
+  background: rgba(251, 113, 133, 0.12);
+}

@@ -96,8 +96,23 @@
       <button class="btn ghost" id="btnResign" type="button">认输</button>
     </div>
     <div class="wait-bar hidden" id="waitBar">等待对手行动…</div>
+    <div class="perk-bar hidden" id="perkBar">
+      <span class="perk-bar-text" id="perkBarText"></span>
+    </div>
   </footer>
 
+</div>
+
+<!-- ============ 肉鸽：三选一能力卡 ============ -->
+<div class="overlay hidden" id="ovPerk">
+  <div class="modal perk-modal">
+    <h1 class="modal-title" style="font-size:22px">三选一 · 能力卡</h1>
+    <p class="modal-sub" id="perkSub">第 3 回合开始，每回合可以拿一张能力卡</p>
+    <div class="perk-cards" id="perkCards"></div>
+    <div class="modal-actions perk-actions">
+      <button class="btn ghost" id="btnPerkSkip" type="button">这一回合不选</button>
+    </div>
+  </div>
 </div>
 
 <!-- ============ 联机 ============ -->
@@ -186,6 +201,7 @@
 <script src="js/ai.js"></script>
 <script src="js/net.js"></script>
 <script src="js/mods.js"></script>
+<script src="js/rogue.js"></script>
 <script src="js/settings.js"></script>
 <script src="js/rules.js"></script>
 <script src="js/renderer.js"></script>

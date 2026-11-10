@@ -1,4 +1,4 @@
-﻿/* =========================================================
+/* =========================================================
  * engine.js —— 规则引擎（纯逻辑，不碰 DOM）
  *
  * 规则摘要
@@ -73,6 +73,27 @@
     firstPlayer: 1,                  // 先手：1 = 赤方（地图下方的红方）
     firstTurnEnergy: [4, 3]          // 各方第一个回合的费用（按玩家下标）：青方后手，补 4 点
   };
+
+  /* ---------------- 肉鸽：能力卡状态 ---------------- */
+  // 每方一份，随对局序列化。卡片定义在 rogue.js，这里只存状态与规则钩子。
+  function blankPerks() {
+    return {
+      cards: [],            // 已获得的能力卡 id（按获得顺序）
+      energyPerTurn: 0,     // 每回合额外费用（生产改造）
+      freeDeploy: {},       // { typeId: n } 还有几次免费部署
+      promoteLeft: 0,       // 剩下几次「晋升」可改造的棋子数
+      obstacleLeft: 0,      // 还能手动放几个障碍
+      phantoms: [],         // 城防炮：留下的隐形火力 { key, atk, range, owner }
+      flags: {},            // 各种开关（见 rogue.js 的 FLAG_*）
+      pickedTurn: 0,        // 上一次选卡发生在第几回合
+      offer: null,          // 当前待选的 3 张卡（null = 不用选）
+      offerTurn: 0
+    };
+  }
+
+  function cloneJSON(v) {
+    return v == null ? v : JSON.parse(JSON.stringify(v));
+  }
 
   function mulberry32(seed) {
     var a = seed >>> 0;
@@ -198,6 +219,9 @@
     this.maxSwing = [0, 0];      // 单次结算最多清掉对方几个棋子
     this.slavesUsed = [0, 0];    // 本回合各方已经召出的奴隶数（每回合清零）
 
+    this.rogue = !!opts.rogue;   // 肉鸽模式：第 3 回合起每回合发 3 张能力卡
+    this.perks = [blankPerks(), blankPerks()];
+
     this.baseIds = [null, null];
     this.baseIds[0] = this.spawnBase(0, this.board.baseA).id;
     this.baseIds[1] = this.spawnBase(1, this.board.baseB).id;
@@ -232,6 +256,39 @@
     return id == null ? null : (this.pieces.get(id) || null);
   };
 
+  // 某一方的能力卡状态
+  Game.prototype.perksOf = function (owner) {
+    if (!this.perks) this.perks = [blankPerks(), blankPerks()];
+    if (!this.perks[owner]) this.perks[owner] = blankPerks();
+    var p = this.perks[owner];
+    if (!p.flags) p.flags = {};
+    if (!p.freeDeploy) p.freeDeploy = {};
+    if (!p.phantoms) p.phantoms = [];
+    if (!p.cards) p.cards = [];
+    return p;
+  };
+
+  Game.prototype.hasFlag = function (owner, flag) {
+    var p = this.perksOf(owner);
+    return !!(p.flags && p.flags[flag]);
+  };
+
+  // 这一方放这个兵种还要不要花钱（有免费券就免费）
+  Game.prototype.freeTokenLeft = function (owner, typeId) {
+    var p = this.perksOf(owner);
+    return Math.max(0, Math.round(Number(p.freeDeploy[typeId]) || 0));
+  };
+
+  // 本回合还能免费召唤/部署多少个该类棋子
+  Game.prototype.costFor = function (owner, typeId, opts) {
+    opts = opts || {};
+    var t = this.types[typeId];
+    if (!t) return 0;
+    if (opts.free) return 0;
+    if (this.freeTokenLeft(owner, typeId) > 0) return 0;
+    return t.cost;
+  };
+
   Game.prototype.baseOf = function (owner) {
     var id = this.baseIds[owner];
     return id == null ? null : (this.pieces.get(id) || null);
@@ -250,14 +307,28 @@
   };
 
   // 己方与大本营连通的所有棋子所在格
+  // 肉鸽「临时大本营」：自己的光环棋子也可以当作连通源
   Game.prototype.componentKeys = function (owner) {
     var out = new Set();
     var base = this.baseOf(owner);
     if (!base) return out;
 
-    var seen = new Set([base.key]);
-    var stack = [base.key];
-    out.add(base.key);
+    var seen = new Set();
+    var stack = [];
+    var roots = [base.key];
+    if (this.hasFlag(owner, 'tempBase')) {
+      this.pieces.forEach(function (p) {
+        if (p.owner !== owner || p.kind === 'base') return;
+        if (!this.auraOf(p)) return;
+        roots.push(p.key);
+      }, this);
+    }
+    roots.forEach(function (k) {
+      if (seen.has(k)) return;
+      seen.add(k);
+      out.add(k);
+      stack.push(k);
+    });
 
     while (stack.length) {
       var k = stack.pop();
@@ -305,13 +376,16 @@
     if (t.noDeploy && !opts.free) return { ok: false, msg: '这个兵种只能由奴隶主召唤' };
     if (t.rangeMode === 'line' && opts.dir == null) return { ok: false, msg: '请先选择狙击方向' };
     if (opts.dir != null && (opts.dir < 0 || opts.dir > 5)) return { ok: false, msg: '方向不合法' };
-    if (!opts.free && this.energy < t.cost) return { ok: false, msg: '费用不足' };
+    var cost = this.costFor(owner, typeId, opts);
+    if (this.energy < cost) return { ok: false, msg: '费用不足' };
     var cell = this.board.cells.get(cellKey);
     if (!cell) return { ok: false, msg: '地图外' };
     if (cell.obstacle) return { ok: false, msg: '这里是障碍' };
 
     // 有些兵种必须贴着某个兵种放（例如奴隶要挨着奴隶主）
-    if (t.requiresNear) {
+    // 肉鸽「解放」：自己的奴隶可以放在任意空格
+    var anywhere = t.requiresNear && this.hasFlag(owner, 'slaveAnywhere');
+    if (t.requiresNear && !anywhere) {
       var need = this.types[t.requiresNear] || TYPES[t.requiresNear];
       var near = false;
       var here = Hex.parse(cellKey);
@@ -338,7 +412,7 @@
       return { ok: true, msg: '', replace: sitting };
     }
 
-    if (!this.legalCells(owner).has(cellKey)) return { ok: false, msg: '只能放在己方连通块的边缘' };
+    if (!anywhere && !this.legalCells(owner).has(cellKey)) return { ok: false, msg: '只能放在己方连通块的边缘' };
     return { ok: true, msg: '' };
   };
 
@@ -372,11 +446,20 @@
     var p = {
       id: this.nextId++, owner: owner, kind: typeId, key: cellKey,
       hp: t.hp, maxHp: t.hp, atk: t.atk, range: t.range,
-      dir: (t.rangeMode === 'line') ? (opts.dir == null ? 0 : opts.dir) : null
+      dir: (t.rangeMode === 'line') ? (opts.dir == null ? 0 : opts.dir) : null,
+      hidden: !!opts.hidden || (typeId === 'sniper' && this.hasFlag(owner, 'hiddenSnipers')),
+      shiftDir: null, uglyDir: null, auraBonus: null
     };
     this.pieces.set(p.id, p);
     this.occupant.set(cellKey, p.id);
-    if (!opts.free) this.energy -= t.cost;
+
+    var cost = this.costFor(owner, typeId, opts);
+    if (cost > 0) {
+      this.energy -= cost;
+    } else if (!opts.free) {
+      var pk = this.perksOf(owner);
+      if (this.freeTokenLeft(owner, typeId) > 0) pk.freeDeploy[typeId] = this.freeTokenLeft(owner, typeId) - 1;
+    }
 
     this.history.push({
       type: 'place', owner: owner, kind: typeId, key: cellKey,
@@ -453,6 +536,51 @@
     return p;
   };
 
+  /* ---------------- 肉鸽卡牌用到的局面操作 ---------------- */
+
+  // 晋升：把场上的一个棋子就地变成另一种兵种（数值按新兵种重置）
+  Game.prototype.transform = function (pieceId, typeId) {
+    var p = this.pieces.get(pieceId);
+    var t = this.types[typeId] || TYPES[typeId];
+    if (!p || !t) return null;
+    p.kind = typeId;
+    p.hp = t.hp;
+    p.maxHp = t.hp;
+    p.atk = t.atk;
+    p.range = t.range;
+    p.dir = (t.rangeMode === 'line') ? (p.dir == null ? 0 : p.dir) : null;
+    p.shiftDir = null;
+    return p;
+  };
+
+  // 地形修改：在空格上放一个障碍
+  Game.prototype.placeObstacle = function (cellKey) {
+    var cell = this.board.cells.get(cellKey);
+    if (!cell) return false;
+    if (cell.obstacle) return false;
+    if (this.occupant.has(cellKey)) return false;
+    cell.obstacle = true;
+    this.board.obstacles = (this.board.obstacles || 0) + 1;
+    this.history.push({ type: 'obstacle', key: cellKey, turn: this.turn });
+    return true;
+  };
+
+  // 步坦协同：交换两个己方棋子的位置（只要求相邻）
+  Game.prototype.swapCells = function (keyA, keyB) {
+    var a = this.occupant.get(keyA);
+    var b = this.occupant.get(keyB);
+    if (a == null || b == null) return false;
+    var pa = this.pieces.get(a);
+    var pb = this.pieces.get(b);
+    if (!pa || !pb) return false;
+    this.occupant.set(keyA, b);
+    this.occupant.set(keyB, a);
+    pa.key = keyB;
+    pb.key = keyA;
+    this.history.push({ type: 'swap', a: keyA, b: keyB, turn: this.turn });
+    return true;
+  };
+
   // 每个棋子会吃到的敌方攻击力总和（只读，不改变局面；AI 和结算共用）
   /* ---------------- 光环 ---------------- */
   // 每种兵种都可以带一个光环：{ radius, effect, amount }
@@ -484,33 +612,58 @@
   };
 
   // 覆盖到 target 的某个效果里，数值最高的那一个（同类光环不叠加，取最高）
-  Game.prototype.auraMax = function (target, effect) {
+  // 肉鸽钩子：
+  //   auraRadius  己方光环半径 +1
+  //   auraStack   自己的炮兵可以吃多个同种光环的叠加
+  //   auraTwoAttr 己方光环棋子同时提供攻/血两种加成
+  //   o.auraBonus 临时授予的光环（小队长）
+  Game.prototype.auraValue = function (target, effect) {
     var self = this;
     var from = Hex.parse(target.key);
+    var stack = (target.kind === 'artillery') && this.hasFlag(target.owner, 'auraStack');
+    var two = this.hasFlag(target.owner, 'auraTwoAttr');
+    var rBonus = this.hasFlag(target.owner, 'auraRadius') ? 1 : 0;
+    var total = 0;
     var best = 0;
+
     this.pieces.forEach(function (o) {
       if (o.kind === 'base') return;
+      var list = [];
       var a = self.auraOf(o);
-      if (!a || a.effect !== effect) return;
-      if (Hex.distance(Hex.parse(o.key), from) > a.radius) return;
-      var friendly = (a.effect === 'atk' || a.effect === 'hp');
-      if (friendly && o.owner !== target.owner) return;
-      if (!friendly && o.owner === target.owner) return;
-      if (a.amount > best) best = a.amount;
+      if (a) list.push(a);
+      if (o.auraBonus) list.push(o.auraBonus);
+      for (var i = 0; i < list.length; i++) {
+        var au = list[i];
+        if (!au) continue;
+        var friendly = (au.effect === 'atk' || au.effect === 'hp');
+        var hit = (au.effect === effect);
+        if (!hit && two && friendly && o.owner === target.owner && (effect === 'atk' || effect === 'hp')) hit = true;
+        if (!hit) continue;
+        if (friendly && o.owner !== target.owner) continue;
+        if (!friendly && o.owner === target.owner) continue;
+        var radius = au.radius + (o.owner === target.owner ? rBonus : 0);
+        if (Hex.distance(Hex.parse(o.key), from) > radius) continue;
+        total += au.amount;
+        if (au.amount > best) best = au.amount;
+      }
     });
-    return best;
+    return stack ? total : best;
+  };
+
+  Game.prototype.auraMax = function (target, effect) {
+    return this.auraValue(target, effect);
   };
 
   // 旧名字保留（等价于取最高值）
   Game.prototype.auraSum = function (target, effect) {
-    return this.auraMax(target, effect);
+    return this.auraValue(target, effect);
   };
 
   // 实际攻击力（受光环影响）
   Game.prototype.atkOf = function (piece) {
     var base = piece.atk || 0;
     if (base <= 0) return 0;
-    var v = base + this.auraMax(piece, 'atk') - this.auraMax(piece, 'enemyAtk');
+    var v = base + this.auraValue(piece, 'atk') - this.auraValue(piece, 'enemyAtk');
     return Math.max(0, v);
   };
 
@@ -518,7 +671,7 @@
   Game.prototype.hpOf = function (piece) {
     var base = piece.hp || 0;
     if (base <= 0) return 0;
-    var v = base + this.auraMax(piece, 'hp') - this.auraMax(piece, 'enemyHp');
+    var v = base + this.auraValue(piece, 'hp') - this.auraValue(piece, 'enemyHp');
     return Math.max(1, v);
   };
 
@@ -565,23 +718,49 @@
 
     if (mode === 'line') {
       // 直线：沿部署时选定的方向，最多 range 格
+      // 肉鸽「gxyy」：己方狙击手的射程变成无限（一直打到地图边缘）
       var d = Hex.DIRS[piece.dir == null ? 0 : piece.dir] || Hex.DIRS[0];
-      var len = Math.max(1, piece.range || 1);
+      var infinite = (piece.kind === 'sniper' && this.hasFlag(piece.owner, 'sniperInfinite'));
+      var len = infinite ? this.side * 3 : Math.max(1, piece.range || 1);
       for (var step = 1; step <= len; step++) {
         var k = Hex.key(from.q + d.q * step, from.r + d.r * step);
-        if (this.board.cells.has(k)) out.add(k);
+        if (!this.board.cells.has(k)) break;
+        out.add(k);
+        if (!infinite) continue;
+      }
+      // 丑东西：在这一方向再多一格
+      if (piece.uglyDir != null && piece.uglyDir >= 0) {
+        var ud = Hex.DIRS[piece.uglyDir];
+        if (ud) {
+          var uk = Hex.key(from.q + ud.q * (Math.max(1, piece.range || 1) + 1), from.r + ud.r * (Math.max(1, piece.range || 1) + 1));
+          if (this.board.cells.has(uk)) out.add(uk);
+        }
       }
       return out;
     }
 
-    // 圆形：距离 <= range
+    // 圆形：距离 <= range（肉鸽「高射炮」可以把圆心整体偏移一格）
+    var cq = from.q;
+    var cr = from.r;
+    if (piece.shiftDir != null && piece.shiftDir >= 0) {
+      var sd = Hex.DIRS[piece.shiftDir];
+      if (sd) { cq += sd.q; cr += sd.r; }
+    }
     var r = Math.max(0, piece.range || 0);
     for (var dq = -r; dq <= r; dq++) {
       for (var dr = -r; dr <= r; dr++) {
         if (Math.abs(dq + dr) > r) continue;
         if (dq === 0 && dr === 0) continue;
-        var key = Hex.key(from.q + dq, from.r + dr);
+        var key = Hex.key(cq + dq, cr + dr);
         if (this.board.cells.has(key)) out.add(key);
+      }
+    }
+    // 丑东西：指定方向多打一格
+    if (piece.uglyDir != null && piece.uglyDir >= 0) {
+      var u2 = Hex.DIRS[piece.uglyDir];
+      if (u2) {
+        var k2 = Hex.key(from.q + u2.q * (r + 1), from.r + u2.r * (r + 1));
+        if (this.board.cells.has(k2)) out.add(k2);
       }
     }
     return out;
@@ -593,19 +772,36 @@
     var all = [];
     this.pieces.forEach(function (p) { all.push(p); out.set(p.id, 0); });
 
-    all.forEach(function (attacker) {
-      var a = self.atkOf(attacker);
-      if (a <= 0) return;
-      var cells = self.attackCells(attacker);
-      if (!cells.size) return;
+    var applyHit = function (attacker, cells, a) {
       cells.forEach(function (key) {
         var id = self.occupant.get(key);
         if (id == null) return;
         var target = self.pieces.get(id);
         if (!target || target.owner === attacker.owner) return;
+        // 肉鸽「隐匿」：只受距离 1 的攻击伤害
+        if (target.hidden && Hex.distance(Hex.parse(attacker.key), Hex.parse(target.key)) > 1) return;
         out.set(target.id, (out.get(target.id) || 0) + a);
       });
+    };
+
+    all.forEach(function (attacker) {
+      var a = self.atkOf(attacker);
+      if (a <= 0) return;
+      var cells = self.attackCells(attacker);
+      if (!cells.size) return;
+      applyHit(attacker, cells, a);
     });
+
+    // 城防炮：棋子没了，但火力还在
+    for (var owner = 0; owner < 2; owner++) {
+      var ph = this.perksOf(owner).phantoms || [];
+      for (var i = 0; i < ph.length; i++) {
+        var f = ph[i];
+        if (!this.board.cells.has(f.key)) continue;
+        var fake = { owner: owner, kind: '_phantom', key: f.key, atk: f.atk, range: f.range, dir: null, shiftDir: null, uglyDir: null };
+        applyHit(fake, this.attackCells(fake), f.atk);
+      }
+    }
     return out;
   };
 
@@ -638,6 +834,54 @@
       if (gone.kind !== 'base') this.kills[1 - gone.owner] += 1;
     }, this);
 
+    // 2.5) 肉鸽结算钩子：俘虏 / 丑东西继承（放在断联移除之前，避免己方奴隶先被切断）
+    
+    var perkEvents = [];
+    for (var po = 0; po < 2; po++) {
+      if (!this.hasFlag(po, 'capture')) continue;
+      var self2 = this;
+      removed.forEach(function (r) {
+        if (r.piece.owner === po) return;
+        var dead = Hex.parse(r.piece.key);
+        var side = Hex.neighbors(dead.q, dead.r);
+        for (var i = 0; i < 6; i++) {
+          var nk = Hex.key(side[i].q, side[i].r);
+          var id = self2.occupant.get(nk);
+          if (id == null) continue;
+          var s = self2.pieces.get(id);
+          if (!s || s.owner !== po || s.kind !== 'slave') continue;
+          // 奴隶 -> 奴隶主
+          var st = self2.types.slaver || TYPES.slaver;
+          s.kind = 'slaver';
+          s.maxHp = st.hp; s.hp = st.hp; s.atk = st.atk; s.range = st.range;
+          // 阵亡的敌方棋子 -> 己方奴隶（原地复活）
+          var sl = self2.spawn(po, 'slave', r.piece.key);
+          perkEvents.push({ type: 'capture', owner: po, at: nk, from: r.piece.key, slave: !!(sl) });
+          break;
+        }
+      });
+    }
+    // 丑东西：持有者阵亡时，附近最近的一台坦克/步兵继承
+    removed.forEach(function (r) {
+      var p = r.piece;
+      if (p.uglyDir == null || p.uglyDir < 0) return;
+      var from = Hex.parse(p.key);
+      var best = null, bestD = Infinity;
+      this.pieces.forEach(function (o) {
+        if (o.owner !== p.owner) return;
+        if (o.kind !== 'tank' && o.kind !== 'infantry') return;
+        if (o.uglyDir != null && o.uglyDir >= 0) return;
+        var d = Hex.distance(Hex.parse(o.key), from);
+        if (d < bestD) { bestD = d; best = o; }
+      });
+      if (!best) return;
+      best.atk += 1;
+      best.maxHp += 2;
+      best.hp = (best.hp || 0) + 2;
+      best.uglyDir = p.uglyDir;
+      perkEvents.push({ type: 'inherit', owner: p.owner, to: best.key, dir: p.uglyDir });
+    }, this);
+
     // 3) 断联移除：双方各自检查（死亡之后才检查，因此可以「切断」敌人）
     var cut = [];
     for (var owner = 0; owner < 2; owner++) {
@@ -660,6 +904,7 @@
       this.lost[gone.owner] += 1;
       this.kills[1 - gone.owner] += 1;
     }, this);
+
 
     // 3.5) 记录「单次结算最大击杀」
     var perOwner = [0, 0];
@@ -688,6 +933,7 @@
       killedByDamage: removed.filter(function (r) { return r.reason === 'damage'; }),
       removedByCut: removed.filter(function (r) { return r.reason === 'cut'; }),
       removed: removed,
+      perkEvents: perkEvents,
       over: this.over,
       winner: this.winner,
       deadBases: deadBases
@@ -698,17 +944,24 @@
 
   // 本回合应该给多少费用：第 1 回合是双方各自的第一个回合，后手（青方）多 1 点
   Game.prototype.turnEnergy = function () {
+    var base;
     if (this.turn === 1) {
       var e = this.rules.firstTurnEnergy[this.active];
-      if (e != null) return e;
+      base = (e != null) ? e : this.rules.energyPerTurn;
+    } else {
+      base = this.rules.energyPerTurn;
     }
-    return this.rules.energyPerTurn;
+    return base + (this.perksOf(this.active).energyPerTurn || 0);
   };
 
   Game.prototype.endTurn = function () {
     if (this.over) return;
     this.active = 1 - this.active;
     if (this.active === this.firstPlayer) this.turn += 1;
+    var pk = this.perksOf(this.active);
+    if (this.rogue && pk.flags && pk.flags.recruit) {
+      pk.freeDeploy.infantry = (Math.round(Number(pk.freeDeploy.infantry) || 0)) + 1;
+    }
     this.energy = this.turnEnergy();
     this.turnEnergyMax = this.energy;
     this.resolveCount = 0;
@@ -747,7 +1000,11 @@
       g.pieces.set(id, {
         id: p.id, owner: p.owner, kind: p.kind, key: p.key,
         hp: p.hp, maxHp: p.maxHp, atk: p.atk, range: p.range,
-        dir: (p.dir == null ? null : p.dir)
+        dir: (p.dir == null ? null : p.dir),
+        hidden: !!p.hidden,
+        shiftDir: (p.shiftDir == null ? null : p.shiftDir),
+        uglyDir: (p.uglyDir == null ? null : p.uglyDir),
+        auraBonus: p.auraBonus ? cloneJSON(p.auraBonus) : null
       });
     });
     g.occupant = new Map(this.occupant);
@@ -757,6 +1014,8 @@
     g.maxSwing = this.maxSwing.slice();
     g.slavesUsed = this.slavesUsed.slice();
     g.baseIds = this.baseIds.slice();
+    g.rogue = this.rogue;
+    g.perks = cloneJSON(this.perks) || [blankPerks(), blankPerks()];
     g.firstPlayer = this.firstPlayer;
     g.active = this.active;
     g.turn = this.turn;
@@ -776,7 +1035,11 @@
       pieces.push({
         id: p.id, o: p.owner, k: p.kind, c: p.key,
         hp: p.hp, m: p.maxHp, a: p.atk, r: p.range,
-        dir: (p.dir == null ? null : p.dir)
+        dir: (p.dir == null ? null : p.dir),
+        h: p.hidden ? 1 : 0,
+        sd: (p.shiftDir == null ? null : p.shiftDir),
+        ud: (p.uglyDir == null ? null : p.uglyDir),
+        ab: p.auraBonus ? p.auraBonus : null
       });
     });
     var obstacles = [];
@@ -796,6 +1059,8 @@
       maxSwing: this.maxSwing,
       slavesUsed: this.slavesUsed,
       baseIds: this.baseIds,
+      rogue: this.rogue ? 1 : 0,
+      perks: this.perks,
       firstPlayer: this.firstPlayer,
       active: this.active,
       turn: this.turn,
@@ -831,11 +1096,17 @@
         id: d.id, owner: d.o, kind: d.k, key: d.c,
         hp: d.hp, maxHp: d.m != null ? d.m : d.hp,
         atk: d.a != null ? d.a : 0, range: d.r != null ? d.r : 0,
-        dir: (d.dir == null ? null : d.dir)
+        dir: (d.dir == null ? null : d.dir),
+        hidden: !!d.h,
+        shiftDir: (d.sd == null ? null : d.sd),
+        uglyDir: (d.ud == null ? null : d.ud),
+        auraBonus: d.ab || null
       };
       g.pieces.set(p.id, p);
       g.occupant.set(p.key, p.id);
     });
+    g.rogue = !!s.rogue;
+    g.perks = (s.perks && s.perks.length === 2) ? cloneJSON(s.perks) : [blankPerks(), blankPerks()];
     g.nextId = s.nextId || 1;
     g.kills = (s.kills || [0, 0]).slice();
     g.lost = (s.lost || [0, 0]).slice();

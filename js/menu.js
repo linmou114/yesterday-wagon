@@ -1,4 +1,4 @@
-﻿/* =========================================================
+/* =========================================================
  * menu.js —— 开始菜单页（index.html）
  *
  *   只负责：模式选择（跳转到 game.html）、设置编辑、规则、
@@ -492,6 +492,7 @@
   function bind() {
     $('btnModeLocal').addEventListener('click', function () { startMode('local'); });
     $('btnModeAI').addEventListener('click', function () { startMode('ai'); });
+    $('btnModeRogue').addEventListener('click', function () { startMode('rogue'); });
     $('btnModeOnline').addEventListener('click', function () { startMode('online'); });
     $('btnModeTutorial').addEventListener('click', function () { startMode('tutorial'); });
 
