@@ -489,9 +489,18 @@
       app.aiKey = key;
       app.aiThinkMs = 1000 + Math.floor(Math.random() * 2000);   // 1~3 秒
       toast(g.players[g.active].name + ' 思考中…');
-    } else {
-      app.aiThinkMs = 430;
+      // 搜索是同步的，会占住主线程；先让上面这行「思考中」画到屏幕上再算
+      app.aiTimer = setTimeout(aiThink, 90);
+      return;
     }
+    app.aiThinkMs = 430;
+    aiThink();
+  }
+
+  function aiThink() {
+    app.aiTimer = null;
+    var g = app.game;
+    if (app.mode !== 'ai' || !g || g.over || g.active !== app.aiSeat) return;
 
     var t0 = Date.now();
     var act = null;
