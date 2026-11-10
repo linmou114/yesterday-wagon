@@ -36,13 +36,20 @@
     return Math.max(1, n - 1);
   }
 
-  // 正中央 = 1，最外圈 = 0
+  // 正中央 = 1，最外圈 = 0（按棋盘半径缓存，估值和排序里会被反复问）
+  var CENTER_CACHE = {};
   function centerWeight(g, key) {
+    var n = g.side || 5;
+    var ck = n + '|' + key;
+    var hit = CENTER_CACHE[ck];
+    if (hit != null) return hit;
     var d = Hex.distance(Hex.parse(key), { q: 0, r: 0 });
-    var r = boardRadius(g);
+    var r = Math.max(1, n - 1);
     var w = 1 - d / r;
-    if (w < 0) return 0;
-    return w > 1 ? 1 : w;
+    if (w < 0) w = 0;
+    if (w > 1) w = 1;
+    CENTER_CACHE[ck] = w;
+    return w;
   }
 
   // 攻击形状：一组相对偏移（缓存，避免每次现算 HashSet）
@@ -71,18 +78,110 @@
 
   /* ---------------- 单棋子价值 ---------------- */
 
-  // 这个棋子的光环「边际」贡献多少点数（同类光环不叠加，只算它能顶上去的那部分）
-  function auraCoverage(g, p) {
+  // 经济底盘：值多少钱由「花了多少费」决定，血量只作小幅修正。
+  // 指数 1.22 而不是线性：格子是稀缺资源，同样占一格，2 费兵本来就该比
+  // 两个 1 费兵更划算，所以贵的兵单位费用产出更高。
+  var COST_UNIT = 7.0;
+  var COST_EXP = 1.22;
+  var HP_UNIT = 0.5;
+  var SLAVE_FLOOR = 2.5;
+
+  // 一次快照：把「谁有多少攻、多少血、能打到哪些格、每个目标吃多少伤害」都算一遍，
+  // 后面估值直接查表。atkOf/hpOf 每次都要扫全场光环，重复调用是搜索变慢的主因。
+  function snapshot(g) {
+    var cells = new Map();
+    var hp = new Map();
+    var atk = new Map();
+    var dmg = new Map();
+    g.pieces.forEach(function (p) {
+      var a = (p.atk || 0) > 0 ? g.atkOf(p) : 0;
+      atk.set(p.id, a);
+      hp.set(p.id, g.hpOf(p));
+      dmg.set(p.id, dmg.get(p.id) || 0);
+      if (a <= 0) return;
+      var c = g.attackCells(p);
+      if (!c.size) return;
+      cells.set(p.id, c);
+      c.forEach(function (k) {
+        var id = g.occupant.get(k);
+        if (id == null) return;
+        var t = g.pieces.get(id);
+        if (!t || t.owner === p.owner) return;
+        dmg.set(t.id, (dmg.get(t.id) || 0) + a);
+      });
+    });
+    return { cells: cells, hp: hp, atk: atk, dmg: dmg };
+  }
+
+  // 不吃任何加成、不算威胁的「裸价」，只由费用和血量决定（也可用来给目标定价，避免递归）
+  function rawValue(g, p, ctx) {
+    if (p.kind === 'base') return 16 * (ctx && ctx.hp ? ctx.hp.get(p.id) : hpOf(g, p));
+    var t = (g && g.types && g.types[p.kind]) || ENGINE.TYPES[p.kind] || {};
+    var cost = (t.cost == null ? 1 : t.cost);
+    var hp = (ctx && ctx.hp) ? ctx.hp.get(p.id) : hpOf(g, p);
+    var v = COST_UNIT * Math.pow(Math.max(0, cost), COST_EXP) + HP_UNIT * hp;
+    if (p.kind === 'slave' || t.noDeploy) v = Math.max(v, SLAVE_FLOOR);
+    if (p.kind === 'slaver') v += 3.0;      // 每回合白嫖一个奴隶
+    return v;
+  }
+
+  // 攻击价值：不是「攻击力 × 射程」，而是「这一刀实际对着几个棋子、能参与吃掉多少」
+  //   - 目标这条线已经够斩杀：按自己的伤害占比瓜分目标价值
+  //   - 还不够斩杀：只给一点点施压分（打不动就是打不动）
+  //   - 打大本营：每点伤害直接折分
+  var KILL_CREDIT = 0.75;
+  var PRESSURE = 0.28;
+  var BASE_HIT = 0.7;
+
+  function attackValue(g, p, ctx) {
+    var atk = (ctx && ctx.atk) ? (ctx.atk.get(p.id) || 0)
+      : ((g && g.atkOf) ? g.atkOf(p) : (p.atk || 0));
+    if (!atk || atk <= 0) return 0;
+    var cells = (ctx && ctx.cells) ? ctx.cells.get(p.id) : g.attackCells(p);
+    if (!cells || !cells.size) return 0;
+    var dmg = (ctx && ctx.dmg) || g.damageMap();
+    var sum = 0;
+    cells.forEach(function (k) {
+      var id = g.occupant.get(k);
+      if (id == null) return;
+      var t = g.pieces.get(id);
+      if (!t || t.owner === p.owner) return;
+      if (t.kind === 'base') { sum += BASE_HIT * atk; return; }
+      var tv = rawValue(g, t, ctx);
+      var hp = Math.max(1, (ctx && ctx.hp) ? (ctx.hp.get(t.id) || 1) : hpOf(g, t));
+      var total = dmg.get(t.id) || 0;
+      if (total >= hp) {
+        // 这次结算真的能吃到它：按伤害贡献分一份价值
+        sum += KILL_CREDIT * tv * (atk / Math.max(1, total));
+      } else {
+        // 还差得远：按「我贡献了多少伤害 / 它还差多少」记一点施压，
+        // 旁边友军越多（total 越大）这份施压越接近真的吃子
+        sum += PRESSURE * tv * (atk / hp) * (1 + total / hp);
+      }
+    });
+    return sum;
+  }
+
+  // 光环价值：加成到的棋子越多，这个棋子越值钱（既是收益，也是「必须保护」的理由）
+  var AURA_HEAD = 1.4;    // 每罩住一个有效单位
+  var AURA_POINT = 0.8;   // 每点有效加成
+
+  function auraValue(g, p) {
     var a = (g.auraOf ? g.auraOf(p) : null);
     if (!a) return 0;
     var from = Hex.parse(p.key);
-    var total = 0;
+    var heads = 0;
+    var pts = 0;
     g.pieces.forEach(function (o) {
       if (o.id === p.id) return;
+      if (o.kind === 'base') return;              // 给大本营加攻击没意义
       if (Hex.distance(Hex.parse(o.key), from) > a.radius) return;
       var friendly = (a.effect === 'atk' || a.effect === 'hp');
       if (friendly && o.owner !== p.owner) return;
       if (!friendly && o.owner === p.owner) return;
+      // 加攻类光环只有对「本身有攻击力」的棋子才有价值
+      if ((a.effect === 'atk' || a.effect === 'enemyAtk') && (o.atk || 0) <= 0) return;
+      // 同类光环取最高值，所以只算「我能顶上去的那部分」
       var best = 0;
       g.pieces.forEach(function (q) {
         if (q.id === p.id || q.id === o.id) return;
@@ -94,30 +193,31 @@
         if (!bf && q.owner === o.owner) return;
         if (b.amount > best) best = b.amount;
       });
-      if (a.amount > best) total += a.amount - best;
+      if (a.amount > best) { heads += 1; pts += a.amount - best; }
     });
-    return total;
+    return AURA_HEAD * heads + AURA_POINT * pts;
   }
 
-  // 单棋子的静态价值（含光环、含中央加成，不含「会不会被打死」）
-  function pieceValue(g, p) {
-    if (p.kind === 'base') return 16 * p.hp;
-    var hp = (g && g.hpOf) ? g.hpOf(p) : p.hp;
-    var atk = (g && g.atkOf) ? g.atkOf(p) : (p.atk || 0);
-    var range = Math.max(1, p.range || 1);
-    var v = 1.9 * hp + 2.4 * atk * (1 + 0.5 * (range - 1)) + 1.6;
-
+  // 单棋子价值 = 裸价 + 攻击价值 + 光环价值，再乘中央加成
+  function pieceValue(g, p, ctx) {
+    if (p.kind === 'base') return 16 * ((ctx && ctx.hp) ? ctx.hp.get(p.id) : hpOf(g, p));
+    if (ctx && ctx.memo && ctx.memo[p.id] != null) return ctx.memo[p.id];
+    var v = rawValue(g, p, ctx) + attackValue(g, p, ctx) + auraValue(g, p);
     if (g) {
-      // 中央加成：射程越长，站中间能罩住的敌人越多，越值钱
       var w = centerWeight(g, p.key);
-      if (w > 0) v *= 1 + 0.34 * w * (1 + 0.22 * (range - 1));
-      var cover = auraCoverage(g, p);
-      if (cover) v += 0.55 * cover + 1.2;
+      if (w > 0) {
+        var range = Math.max(1, p.range || 1);
+        // 中央加成不设太大：位置的真实收益已经通过「攻击价值能罩到谁」体现，
+        // 这里只补一点「站中间将来选择更多」的期权价值。
+        v *= 1 + 0.15 * w * (1 + 0.18 * (range - 1));
+      }
     }
-    if (p.kind === 'slave') v *= 0.85;         // 免费召唤的炮灰
-    if (p.kind === 'slaver') v += 3.0;         // 每回合白嫖一个奴隶
+    if (ctx && ctx.memo) ctx.memo[p.id] = v;
     return v;
   }
+
+  // 兼容旧名
+  function auraCoverage(g, p) { return auraValue(g, p); }
 
   function hpOf(g, p) {
     return (g && g.hpOf) ? g.hpOf(p) : p.hp;
@@ -134,75 +234,35 @@
       return LOSS;
     }
 
-    var dmg = g.damageMap();
+    var ctx = snapshot(g);
+    var dmg = ctx.dmg;
+    ctx.memo = {};
     var myBase = g.baseOf(me);
     var foeBase = g.baseOf(1 - me);
 
     // 下回合就能打爆对方大本营（或自己家要爆）
-    if (foeBase && (dmg.get(foeBase.id) || 0) >= Math.max(1, hpOf(g, foeBase))) return WIN - 100;
-    if (myBase && (dmg.get(myBase.id) || 0) >= Math.max(1, hpOf(g, myBase))) return LOSS + 100;
+    if (foeBase && (dmg.get(foeBase.id) || 0) >= Math.max(1, ctx.hp.get(foeBase.id) || 1)) return WIN - 100;
+    if (myBase && (dmg.get(myBase.id) || 0) >= Math.max(1, ctx.hp.get(myBase.id) || 1)) return LOSS + 100;
 
     var score = 0;
-    var killFoe = 0;      // 这一刀能吃掉对方多少价值
-    var killMine = 0;     // 这一刀会丢掉自己多少价值
 
     g.pieces.forEach(function (p) {
       var mine = p.owner === me;
-      var d = dmg.get(p.id) || 0;
-
-      // 大本营：血量不会一点点掉，只有「一刀打爆」这一种死法
-      if (p.kind === 'base') {
-        score += mine ? pieceValue(g, p) : -pieceValue(g, p);
-        return;
-      }
-
-      var v = pieceValue(g, p);
-
-      // 必死的棋子：不计入子力，改记到「吃子」账上
-      if (d > 0 && d >= hpOf(g, p)) {
-        if (mine) killMine += v; else killFoe += v;
-        return;
-      }
-
+      var v = pieceValue(g, p, ctx);
       score += mine ? v : -v;
 
-      // 推进：离对方大本营更近一点，威胁更大（小权重，主要靠中央加成）
-      var target = mine ? foeBase : myBase;
-      if (target) {
-        var dist = Hex.distance(Hex.parse(p.key), Hex.parse(target.key));
-        var push = Math.max(0, 6 - dist) * 0.22;
-        score += mine ? push : -push;
+      // 推进：离对方大本营更近一点，威胁更大（权重很小，主要靠攻击价值说话）
+      if (p.kind !== 'base') {
+        var target = mine ? foeBase : myBase;
+        if (target) {
+          var dist = Hex.distance(Hex.parse(p.key), Hex.parse(target.key));
+          var push = Math.max(0, 6 - dist) * 0.18;
+          score += mine ? push : -push;
+        }
       }
     });
 
-    // 吃子账：先按「已经没了」扣过一次，这里再把吃子的收益单独加一份
-    score += 0.55 * (killFoe - killMine);
-
-    // 火力覆盖：能打到几个敌人（谁的枪口架在更多人头上）
-    var cover = coverage(g, me);
-    score += 0.45 * (cover.mine - cover.foe);
-
     return score;
-  }
-
-  // 双方各有几个棋子正被对方的火力覆盖
-  function coverage(g, me) {
-    var out = { mine: 0, foe: 0 };
-    g.pieces.forEach(function (p) {
-      if ((p.atk || 0) <= 0) return;
-      var cells = g.attackCells(p);
-      if (!cells.size) return;
-      var n = 0;
-      cells.forEach(function (k) {
-        var id = g.occupant.get(k);
-        if (id == null) return;
-        var q = g.pieces.get(id);
-        if (!q || q.owner === p.owner) return;
-        n++;
-      });
-      if (p.owner === me) out.mine += n; else out.foe += n;
-    });
-    return out;
   }
 
   /* ---------------- 动作生成 ---------------- */
@@ -238,7 +298,7 @@
           h += (atk >= hp) ? 900 : 2.2 * atk;
           continue;
         }
-        if (atk >= hp) h += 3.2 + 1.15 * pieceValue(g, q);   // 能一刀秒掉
+        if (atk >= hp) h += 3.2 + 1.15 * rawValue(g, q);      // 能一刀秒掉
         else h += 0.5 * atk;                                  // 打不动也算压住
       }
     }
@@ -248,7 +308,7 @@
     var occ = g.occupant.get(cell);
     if (occ != null) {
       var sitting = g.pieces.get(occ);
-      if (sitting) h -= pieceValue(g, sitting) * 0.85;       // 替换掉自己人 = 先亏掉它
+      if (sitting) h -= rawValue(g, sitting) * 0.85;         // 替换掉自己人 = 先亏掉它
     }
     h -= 0.32 * (t.cost || 0);
     return h;
@@ -261,7 +321,7 @@
     g.pieces.forEach(function (p) {
       var d = dmg.get(p.id) || 0;
       if (d <= 0 || d < hpOf(g, p)) return;
-      h += (p.owner === me) ? -pieceValue(g, p) : pieceValue(g, p);
+      h += (p.owner === me) ? -rawValue(g, p) : rawValue(g, p);
     });
     return h;
   }
