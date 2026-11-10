@@ -43,7 +43,7 @@ npm start            # = node server/server.js，默认 http://localhost:3000
 ├─ css/style.css       全部样式（深色主题 + 响应式）
 ├─ js/hex.js           六边形网格数学（浏览器/Node 双用）
 ├─ js/engine.js        规则引擎（浏览器/Node 双用，唯一真相来源）
-├─ js/ai.js            内置 AI（评估函数 + 一步前瞻）
+├─ js/ai.js            内置 AI（评估函数 + 迭代加深 α-β 搜索）
 ├─ js/tutorial.js      新手教学关卡（7 关，纯数据+判定，可在 Node 测）
 ├─ js/net.js           联机客户端（WebSocket、自动重连、心跳保活）
 ├─ js/settings.js      设置数据模型（两个页面共用）

@@ -19,7 +19,7 @@
     <text x="516" y="196" font-family="Microsoft YaHei" font-size="16" font-weight="700" fill="#E8EEF6">从 Minimax 到 MCTS 到 AlphaZero</text>
     <text x="516" y="224" font-family="Microsoft YaHei" font-size="12.5" fill="#93A4B8">AlphaZero 已证明「自对弈 + 价值网络」可行，</text>
     <text x="516" y="246" font-family="Microsoft YaHei" font-size="12.5" fill="#93A4B8">但训练成本与本项目规模不匹配。</text>
-    <text x="516" y="270" font-family="Microsoft YaHei" font-size="12" fill="#7F90A6">我们的选择：一步前瞻 + 手写评估函数</text>
+    <text x="516" y="270" font-family="Microsoft YaHei" font-size="12" fill="#7F90A6">我们的选择：手写评估函数 + 迭代加深 α-β</text>
 
     <rect x="64" y="300" width="404" height="150" rx="12" fill="#121A26" stroke="#22303F"/>
     <text x="88" y="332" font-family="Microsoft YaHei" font-size="12" fill="#FBBF24">实时通信</text>

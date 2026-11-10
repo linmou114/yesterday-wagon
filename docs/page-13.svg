@@ -34,9 +34,9 @@
     <text x="512" y="220" font-family="Microsoft YaHei" font-size="11.5" fill="#93A4B8">说出来的问题，下一步要用胜率回归来调价。</text>
 
     <rect x="492" y="238" width="404" height="74" rx="12" fill="#0E1A26" stroke="#22303F"/>
-    <text x="512" y="264" font-family="Microsoft YaHei" font-size="13" font-weight="700" fill="#E8EEF6">AI 只有一层前瞻</text>
-    <text x="512" y="286" font-family="Microsoft YaHei" font-size="11.5" fill="#93A4B8">下一步引入带剪枝的两层搜索 + 置换表，</text>
-    <text x="512" y="304" font-family="Microsoft YaHei" font-size="11.5" fill="#93A4B8">或把评估函数换成一个小的价值网络。</text>
+    <text x="512" y="264" font-family="Microsoft YaHei" font-size="13" font-weight="700" fill="#E8EEF6">AI 还算不快</text>
+    <text x="512" y="286" font-family="Microsoft YaHei" font-size="11.5" fill="#93A4B8">七层要 1.2 秒，下一步加置换表与增量估值，</text>
+    <text x="512" y="304" font-family="Microsoft YaHei" font-size="11.5" fill="#93A4B8">把预算压到 0.3 秒，联机三方观战才不卡。</text>
 
     <rect x="492" y="322" width="404" height="74" rx="12" fill="#0E1A26" stroke="#22303F"/>
     <text x="512" y="348" font-family="Microsoft YaHei" font-size="13" font-weight="700" fill="#E8EEF6">UGC 还缺审核与分享</text>
