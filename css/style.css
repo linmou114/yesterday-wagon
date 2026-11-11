@@ -1618,3 +1618,18 @@ input.num:focus {
   border-color: rgba(251, 113, 133, 0.45);
   background: rgba(251, 113, 133, 0.12);
 }
+/* ============================ 调试控制台（js/debug.js） ============================ */
+.dbg { position: fixed; left: 14px; bottom: 14px; width: 620px; max-width: calc(100vw - 28px); z-index: 9998; display: none; flex-direction: column; background: rgba(5, 11, 18, .96); border: 1px solid rgba(45, 212, 191, .38); border-radius: 12px; box-shadow: 0 18px 48px rgba(0, 0, 0, .55); font: 12px/1.65 "Cascadia Mono", Consolas, "Courier New", monospace; color: #cfe3ef; overflow: hidden; }
+.dbg.open { display: flex; }
+.dbg-head { display: flex; align-items: center; gap: 8px; padding: 8px 10px; background: rgba(45, 212, 191, .10); border-bottom: 1px solid rgba(45, 212, 191, .22); color: #7ff2e2; font-weight: 600; }
+.dbg-hint { flex: 1; color: #6b7c91; font-weight: 400; }
+.dbg-close { width: 22px; height: 22px; padding: 0; border: 0; border-radius: 6px; background: transparent; color: #93a4b8; font-size: 16px; line-height: 1; cursor: pointer; }
+.dbg-close:hover { background: rgba(244, 63, 94, .18); color: #f43f5e; }
+.dbg-out { padding: 8px 10px; max-height: 42vh; overflow-y: auto; white-space: pre-wrap; word-break: break-word; }
+.dbg-out > div { padding: 1px 0; }
+.dbg-out .dbg-dim { color: #7d8fa3; }
+.dbg-out .dbg-err { color: #ff8fa3; }
+.dbg-out .dbg-in { color: #2dd4bf; }
+.dbg-line { display: flex; align-items: center; gap: 6px; padding: 7px 10px; border-top: 1px solid rgba(34, 48, 63, .9); background: rgba(10, 16, 24, .9); }
+.dbg-line > span { color: #2dd4bf; }
+.dbg-in { flex: 1; min-width: 0; padding: 2px 0; border: 0; outline: none; background: transparent; color: #e8eef6; font: inherit; }
