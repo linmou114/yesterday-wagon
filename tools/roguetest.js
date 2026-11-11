@@ -24,8 +24,9 @@ function force(g, o, id) {
 section('1. 发牌时机');
 {
   const g = mk(); g.turn = 1; g.active = 0; g.energy = 3;
+  eq(ROGUE.FIRST_TURN, 2, '发牌从第 2 回合开始');
   ok(!ROGUE.needsOffer(g, 0), '第 1 回合不发牌');
-  g.turn = 2; ok(!ROGUE.needsOffer(g, 0), '第 2 回合不发牌');
+  g.turn = 2; ok(ROGUE.needsOffer(g, 0), '第 2 回合就发牌');
   g.turn = 3; ok(ROGUE.needsOffer(g, 0), '第 3 回合发牌');
   const off = ROGUE.ensureOffer(g, 0);
   eq(off.length, 3, '三张卡');

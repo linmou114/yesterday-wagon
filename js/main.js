@@ -1575,7 +1575,7 @@ function placePending() {
     var meSecond = firstSeat !== 0;
     var rows = [
       ['地图', mapLine],
-      ['模式', b.rogue ? '<b class="rr-rogue">肉鸽</b>：第 3 回合起，每回合三选一能力卡'
+      ['模式', b.rogue ? '<b class="rr-rogue">肉鸽</b>：第 2 回合起，每回合三选一能力卡'
         : '标准对战（<button type="button" class="rr-toggle" data-rogue-toggle="1">改成肉鸽</button>）'],
       ['先后手', first + '先手' + (meSecond ? '（你坐' + second + '，后手）' : '（你坐' + first + '，先手）')],
       ['费用', '每回合 ' + rf.energyPerTurn + ' 点；' + second + '首回合 ' + rf.firstTurnEnergy[1 - rf.firstPlayer] + ' 点（补偿 +' + st.lastBonus + '）'],
@@ -1850,7 +1850,7 @@ function placePending() {
     if (!g.rogue || !window.ROGUE) return '';
     var list = ROGUE.obtained(g, owner);
     var pk = g.perksOf(owner);
-    var first = ROGUE.FIRST_TURN || 3;
+    var first = ROGUE.FIRST_TURN || 2;
     var pending = !g.over && g.active === owner && g.turn >= first && pk.pickedTurn !== g.turn;
     var html = '<div class="perk-chips-head">能力卡 ' + list.length +
       (pending ? ' <em>本回合待选</em>' : '') + '</div>' +

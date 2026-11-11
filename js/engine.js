@@ -219,7 +219,7 @@
     this.maxSwing = [0, 0];      // 单次结算最多清掉对方几个棋子
     this.slavesUsed = [0, 0];    // 本回合各方已经召出的奴隶数（每回合清零）
 
-    this.rogue = !!opts.rogue;   // 肉鸽模式：第 3 回合起每回合发 3 张能力卡
+    this.rogue = !!opts.rogue;   // 肉鸽模式：第 2 回合起每回合发 3 张能力卡
     this.perks = [blankPerks(), blankPerks()];
 
     this.baseIds = [null, null];
