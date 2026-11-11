@@ -501,6 +501,24 @@ t('通用 · 不是肉鸽模式时不能选卡', () => {
   return '返回「' + r.msg + '」';
 });
 
+t('免费券 · 天降奇兵的免费部署不扣费、用一次就没了', () => {
+  const g = mk();
+  g.energy = 0;                        // 关键：一点费用都没有，免费券也能用
+  take(g, 'drop-tank', {});            // 拿到 1 张「免费坦克」
+  eq(g.freeTokenLeft(0, 'tank'), 1, '有 1 张券');
+  eq(g.costFor(0, 'tank'), 0, '这时的费用是 0');
+  const cells = Array.from(g.legalCells(0));
+  const chk = g.canPlace(0, 'tank', cells[0]);
+  ok(chk.ok, '0 费也能放（' + (chk.msg || 'ok') + '）');
+  g.place(0, 'tank', cells[0]);
+  eq(g.energy, 0, '能源没被扣');
+  eq(g.freeTokenLeft(0, 'tank'), 0, '券用掉了');
+  eq(g.costFor(0, 'tank'), 2, '恢复原价');
+  const chk2 = g.canPlace(0, 'tank', cells[1]);
+  ok(!chk2.ok, '第二辆就要钱了');
+  return '0 费 → 放下 1 辆坦克仍 0 费，第二辆提示「' + chk2.msg + '」';
+});
+
 /* =========================================================
  * 输出
  * ========================================================= */

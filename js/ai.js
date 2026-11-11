@@ -272,7 +272,10 @@
     var out = [];
     for (var i = 0; i < types.length; i++) {
       var t = (g.types && g.types[types[i]]) || ENGINE.TYPES[types[i]];
-      if (!t || t.cost > g.energy) continue;
+      if (!t) continue;
+      // 肉鸽的免费券也要算进来，否则 AI 会把「天降奇兵」的免费部署白白留着
+      var cost = (typeof g.costFor === 'function') ? g.costFor(g.active, types[i]) : t.cost;
+      if (cost > g.energy) continue;
       if (t.noDeploy) continue;
       out.push({ type: types[i], t: t });
     }

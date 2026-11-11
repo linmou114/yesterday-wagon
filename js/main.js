@@ -163,12 +163,24 @@
     if (!g.attackCellsFrom) return EMPTY_PREVIEW;
     return g.attackCellsFrom(app.selected, app.hover.key, dir);
   }
+  function actingSeat() {
+    var g = app.game;
+    if (!g) return 0;
+    return (app.mode === 'online' && app.mySeat != null) ? app.mySeat : g.active;
+  }
+  // 实际要付的费用：肉鸽的「天降奇兵 / 三角贸易」会给免费券，这时是 0
+  function costForMe(typeId) {
+    var g = app.game;
+    if (!g || !typeId) return 0;
+    if (typeof g.costFor !== 'function') return 0;
+    return g.costFor(actingSeat(), typeId);
+  }
   function selectedAffordable() {
     var g = app.game;
     if (!g || g.over) return false;
     if (app.selected === '__slave') return (g.freeSlavesLeft ? g.freeSlavesLeft(g.active) : 0) > 0;
     var t = typesOf()[app.selected];
-    return !!t && g.energy >= t.cost;
+    return !!t && g.energy >= costForMe(app.selected);
   }
 
   /* ---------------- 设置（数据模型在 js/settings.js） ---------------- */
@@ -367,14 +379,17 @@
     var list = allIds.filter(function (id) { return !only || only.indexOf(id) >= 0; });
     list.forEach(function (id, idx) {
       var t = typesOf()[id];
-      var afford = g.energy >= t.cost && !g.over;
+      var cost = costForMe(id);
+      var freebie = (cost === 0 && (t.cost || 0) > 0);
+      var afford = g.energy >= cost && !g.over;
       var rangeTxt = (t.rangeMode === 'line') ? ('直线 ' + t.range) : ('射 ' + t.range);
       html += '<button type="button" class="card' + (app.selected === id ? ' sel' : '') +
         (afford ? '' : ' poor') +
+        (freebie ? ' free' : '') +
         (app.pendingReplace && afford ? ' armed' : '') + '" data-type="' + id + '">' +
         '<span class="card-key">' + (idx + 1) + '</span>' +
         '<span class="card-name">' + t.name + '</span>' +
-        '<span class="card-cost">' + t.cost + ' 费</span>' +
+        '<span class="card-cost">' + (freebie ? '免费' : cost + ' 费') + '</span>' +
         '<span class="card-line">血 ' + t.hp + ' · 攻 ' + t.atk + ' · ' + rangeTxt + '</span>' +
         '</button>';
     });
@@ -385,12 +400,16 @@
       var quota = g.freeSlavesLeft(me);
       if (quota > 0) {
         var st = typesOf().slave || ENGINE.TYPES.slave;
+        // 有券但没有奴隶主时，奴隶无处可放（仍需贴着奴隶主），标出来免得玩家白点
+        var noSlaver = (typeof g.slaverCount === 'function') && g.slaverCount(me) === 0;
         html += '<button type="button" class="card free' +
+          (noSlaver ? ' poor' : '') +
           (app.selected === '__slave' ? ' sel' : '') + '" data-type="__slave">' +
           '<span class="card-key">F</span>' +
           '<span class="card-name">' + st.name + ' ×' + quota + '</span>' +
           '<span class="card-cost">免费</span>' +
-          '<span class="card-line">血 ' + st.hp + ' · 攻 ' + st.atk + ' · 射 ' + st.range + ' · 需挨着奴隶主</span>' +
+          '<span class="card-line">血 ' + st.hp + ' · 攻 ' + st.atk + ' · 射 ' + st.range +
+          (noSlaver ? ' · 还没奴隶主' : ' · 需挨着奴隶主') + '</span>' +
           '</button>';
       }
     }
@@ -713,7 +732,7 @@ function placePending() {
 
     var t = typesOf()[app.selected];
     if (!t) return;
-    if (g.energy < t.cost) { toast('费用不足，结束回合后会恢复到 ' + g.rules.energyPerTurn + ' 点'); return; }
+    if (g.energy < costForMe(app.selected)) { toast('费用不足，结束回合后会恢复到 ' + g.rules.energyPerTurn + ' 点'); return; }
 
     // 狙击兵：先确认落点，再拖方向
     if (t.rangeMode === 'line') {
