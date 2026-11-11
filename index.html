@@ -313,6 +313,33 @@
   </div>
 </div>
 
+<!-- 肉鸽：先选对手 -->
+<div class="overlay hidden" id="ovRogue">
+  <div class="modal" style="max-width:420px">
+    <h1 class="modal-title" style="font-size:20px">肉鸽 · 选择对手</h1>
+    <p style="color:#8fa3b8;font-size:13px;line-height:1.7;margin:6px 0 0">
+      第 3 回合起，每回合从三张能力卡里选一张；两个人各抽各的三张。
+    </p>
+    <div class="rogue-ops">
+      <button class="rogue-op" id="btnRogueAI" type="button">
+        <b>单人 · 对 AI</b>
+        <span>你执赤方，电脑会自己选卡</span>
+      </button>
+      <button class="rogue-op" id="btnRogueHuman" type="button">
+        <b>双人 · 同一台设备</b>
+        <span>轮流操作，轮到谁谁选卡</span>
+      </button>
+    </div>
+    <p style="color:#5f7186;font-size:12px;line-height:1.6;margin:0 0 10px">
+      想联机玩肉鸽：进「联机对战」建房，在规则确认里把模式切成肉鸽。
+    </p>
+    <div class="modal-actions">
+      <button class="btn ghost" id="btnRogueCancel" type="button">取消</button>
+    </div>
+  </div>
+</div>
+
+
 <script src="js/hex.js"></script>
 <script src="js/engine.js"></script>
 <script src="js/maps.js"></script>

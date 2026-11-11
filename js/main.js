@@ -73,7 +73,11 @@
     if (params.resume === '1' && restoreResume()) return;
     if (params.mode === 'tutorial') { startTutorial(); return; }
     if (params.mode === 'online') { openOnline(params.code); return; }
-    if (params.mode === 'ai' || params.mode === 'local' || params.mode === 'rogue') { startGame(params.mode); return; }
+    if (params.mode === 'ai' || params.mode === 'local' || params.mode === 'rogue') {
+      app.vsHuman = (params.vs === 'human');       // 肉鸽：双人轮流 还是 对 AI
+      startGame(params.mode);
+      return;
+    }
 
     // 没有参数（直接打开 game.html）→ 回菜单
     location.replace('index.html');
@@ -103,6 +107,7 @@
     try {
       window.sessionStorage.setItem(RESUME_KEY, JSON.stringify({
         mode: app.mode,
+        vsHuman: !!app.vsHuman,
         at: Date.now(),
         game: g.toJSON()
       }));
@@ -120,11 +125,15 @@
       return false;
     }
     try {
-      app.mode = (data.mode === 'ai') ? 'ai' : 'local';
+      app.mode = (data.mode === 'ai' || data.mode === 'rogue') ? data.mode : 'local';
+      app.vsHuman = !!data.vsHuman;
       app.game = ENGINE.Game.fromJSON(data.game);
       if (isAIMode()) {
         app.humanSeat = app.game.firstPlayer;
         app.aiSeat = 1 - app.game.firstPlayer;
+      } else {
+        app.humanSeat = app.game.firstPlayer;
+        app.aiSeat = -1;
       }
       app.renderer.setGame(app.game);
       app.selected = 'infantry';
@@ -213,10 +222,13 @@
     });
     app.mapLabel = map.label;
 
-    // 单人模式：人执先手方，AI 执后手方
+    // 单人模式：人执先手方，AI 执后手方；肉鸽双人则两边都由人操作
     if (isAIMode()) {
       app.humanSeat = app.game.firstPlayer;
       app.aiSeat = 1 - app.game.firstPlayer;
+    } else {
+      app.humanSeat = app.game.firstPlayer;
+      app.aiSeat = -1;
     }
 
     app.selected = 'infantry';
@@ -240,7 +252,8 @@
     hideOverlay('ovOnline');
 
     var g = app.game;
-    addLog('模式：' + (app.mode === 'rogue' ? '肉鸽 · 对战 AI（你执' + g.players[app.humanSeat].name + '）'
+    addLog('模式：' + (app.mode === 'rogue'
+      ? ('肉鸽 · ' + (isAIMode() ? ('对战 AI（你执' + g.players[app.humanSeat].name + '）') : '双人轮流（各自选卡）'))
       : (isAIMode() ? '单人 · 对战 AI（你执' + g.players[app.humanSeat].name + '）' : '本地双人')), 'sys');
     addLog('地图：' + (map.label ? ('默认地图「' + map.label + '」') : '随机地图') +
       ' · 边长 ' + g.side + '（' + g.board.count + ' 格 / ' + g.board.obstacles + ' 处障碍）', 'sys');
@@ -462,7 +475,8 @@
 
   /* ---------------- 模式与回合控制 ---------------- */
 
-  function isAIMode() { return app.mode === 'ai' || app.mode === 'rogue'; }
+  // 肉鸽可以是「对 AI」也可以是「双人轮流」，由 ?vs=human 区分
+  function isAIMode() { return app.mode === 'ai' || (app.mode === 'rogue' && !app.vsHuman); }
 
   function isMyTurn() {
     // 教学模式：永远由玩家操作
@@ -1831,16 +1845,25 @@ function placePending() {
   }
 
   // 面板里的「已获能力」小标签
+  // 侧栏：这一方已获得的能力卡（双方都显示，谁拿了一目了然）
   function perkChips(g, owner) {
     if (!g.rogue || !window.ROGUE) return '';
     var list = ROGUE.obtained(g, owner);
-    if (!list.length) return '';
-    var html = '<div class="perk-chips">';
-    list.forEach(function (c) {
-      var r = rarityOf(c);
-      html += '<span class="perk-chip" style="border-color:' + r.color + '55;color:' + r.color +
-        '" title="' + escHtml(c.desc) + '">' + escHtml(c.name) + '</span>';
-    });
+    var pk = g.perksOf(owner);
+    var first = ROGUE.FIRST_TURN || 3;
+    var pending = !g.over && g.active === owner && g.turn >= first && pk.pickedTurn !== g.turn;
+    var html = '<div class="perk-chips-head">能力卡 ' + list.length +
+      (pending ? ' <em>本回合待选</em>' : '') + '</div>' +
+      '<div class="perk-chips">';
+    if (!list.length) {
+      html += '<span class="perk-chip empty">还没有</span>';
+    } else {
+      list.forEach(function (c) {
+        var r = rarityOf(c);
+        html += '<span class="perk-chip" style="border-color:' + r.color + '55;color:' + r.color +
+          '" title="' + escHtml(c.desc) + '">' + escHtml(c.name) + '</span>';
+      });
+    }
     html += '</div>';
     return html;
   }

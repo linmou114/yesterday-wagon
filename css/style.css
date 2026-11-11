@@ -1633,3 +1633,56 @@ input.num:focus {
 .dbg-line { display: flex; align-items: center; gap: 6px; padding: 7px 10px; border-top: 1px solid rgba(34, 48, 63, .9); background: rgba(10, 16, 24, .9); }
 .dbg-line > span { color: #2dd4bf; }
 .dbg-in { flex: 1; min-width: 0; padding: 2px 0; border: 0; outline: none; background: transparent; color: #e8eef6; font: inherit; }
+
+/* ============================ 调试台 · 图形版（js/debug.js） ============================ */
+.dbg { left: auto; right: 14px; top: 60px; bottom: auto; width: 366px; max-height: calc(100vh - 182px); z-index: 18; font: 12px/1.5 -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif; }
+.dbg-body { padding: 6px 10px 10px; overflow-y: auto; max-height: calc(100vh - 300px); }
+.dbg-badge { flex: 1; color: #7d8fa3; font-weight: 400; }
+.dbg-sec { padding: 8px 0 4px; border-top: 1px solid rgba(34, 48, 63, .7); }
+.dbg-sec:first-child { border-top: 0; padding-top: 2px; }
+.dbg-sec-h { color: #7ff2e2; font-weight: 600; font-size: 11px; letter-spacing: .04em; margin-bottom: 5px; }
+.dbg-row { display: flex; align-items: center; gap: 6px; padding: 3px 0; }
+.dbg-k { width: 78px; flex: 0 0 auto; color: #93a4b8; }
+.dbg-v { flex: 1; display: flex; align-items: center; gap: 5px; flex-wrap: wrap; }
+.dbg-val { min-width: 44px; text-align: center; color: #e8eef6; font-weight: 600; }
+.dbg-btn { min-width: 26px; height: 23px; padding: 0 8px; border: 1px solid #22303f; border-radius: 6px; background: #101a26; color: #cfe3ef; font: inherit; line-height: 21px; cursor: pointer; }
+.dbg-btn:hover:not(:disabled) { border-color: #2dd4bf; color: #7ff2e2; }
+.dbg-btn:disabled { opacity: .4; cursor: not-allowed; }
+.dbg-btn.mini { padding: 0 6px; font-size: 11px; }
+.dbg-btn.dbg-seg.on { background: rgba(45, 212, 191, .18); border-color: #2dd4bf; color: #7ff2e2; }
+.dbg-note { color: #6b7c91; font-size: 11px; padding: 2px 0 5px; }
+.dbg-types { display: grid; grid-template-columns: repeat(4, 1fr); gap: 5px; padding: 2px 0 6px; }
+.dbg-type { display: flex; align-items: center; gap: 4px; padding: 4px 5px; border: 1px solid #22303f; border-radius: 7px; background: #101a26; color: #cfe3ef; font: inherit; cursor: pointer; }
+.dbg-type i { font-style: normal; font-weight: 700; color: #2dd4bf; }
+.dbg-type span { font-size: 11px; }
+.dbg-type:hover:not(:disabled) { border-color: #2dd4bf; }
+.dbg-type.on { background: rgba(45, 212, 191, .18); border-color: #2dd4bf; }
+.dbg-type:disabled { opacity: .4; cursor: not-allowed; }
+.dbg-cards { display: flex; flex-direction: column; gap: 5px; padding: 2px 0 6px; }
+.dbg-card { display: flex; flex-direction: column; gap: 2px; padding: 5px 7px; border: 1px solid #22303f; border-radius: 7px; background: #101a26; text-align: left; font: inherit; cursor: pointer; }
+.dbg-card:hover:not(:disabled) { border-color: #2dd4bf; }
+.dbg-card-n { font-weight: 600; }
+.dbg-card-d { color: #7d8fa3; font-size: 11px; }
+.dbg-sel { flex: 1; min-width: 0; height: 23px; padding: 0 4px; border: 1px solid #22303f; border-radius: 6px; background: #101a26; color: #cfe3ef; font: inherit; }
+.dbg-flags { display: flex; flex-wrap: wrap; gap: 4px; padding: 4px 0 2px; }
+.dbg-flag { padding: 2px 6px; border: 1px solid #22303f; border-radius: 5px; background: #0d1620; color: #7d8fa3; font: 11px/1.5 inherit; cursor: pointer; }
+.dbg-flag.on { border-color: #fbbf24; color: #fbbf24; background: rgba(251, 191, 36, .14); }
+.dbg-status { padding: 6px 10px; border-top: 1px solid rgba(34, 48, 63, .9); color: #7d8fa3; font-size: 11px; min-height: 26px; }
+.dbg-status.err { color: #ff8fa3; }
+.dbg-status.ok { color: #7ff2e2; }
+.dbg-cmd { border-top: 1px solid rgba(34, 48, 63, .9); }
+.dbg-cmd > summary { padding: 5px 10px; cursor: pointer; color: #6b7c91; font-size: 11px; }
+.dbg-cmd .dbg-out { max-height: 22vh; }
+.dbg-cmd .dbg-line { border-top: 1px solid rgba(34, 48, 63, .9); }
+
+/* 肉鸽 · 选对手弹层（index.html） */
+.rogue-ops { display: grid; gap: 9px; margin: 14px 0 10px; }
+.rogue-op { display: flex; flex-direction: column; gap: 3px; padding: 12px 14px; border: 1px solid #22303f; border-radius: 10px; background: #101a26; text-align: left; font: inherit; color: #e8eef6; cursor: pointer; }
+.rogue-op:hover { border-color: #2dd4bf; background: rgba(45, 212, 191, .10); }
+.rogue-op b { font-size: 15px; }
+.rogue-op span { color: #7d8fa3; font-size: 12px; }
+
+/* 侧栏「已获得的卡」 */
+.perk-chips-head { color: #93a4b8; font-size: 11px; margin: 6px 0 3px; display: flex; align-items: center; gap: 6px; }
+.perk-chips-head em { font-style: normal; color: #fbbf24; }
+.perk-chip.empty { color: #536070; border-color: #22303f; }

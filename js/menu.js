@@ -34,7 +34,19 @@
   function startMode(mode) {
     SET.save(settings);
     if (mode === 'tutorial') { play({ mode: 'tutorial' }); return; }
+    if (mode === 'rogue') { openRoguePick(); return; }   // 先问一句：对 AI 还是双人
     play({ mode: mode });
+  }
+
+  /* 肉鸽：选对手 */
+  function openRoguePick() {
+    var ov = $('ovRogue');
+    if (!ov) { play({ mode: 'rogue', vs: 'ai' }); return; }
+    ov.classList.remove('hidden');
+  }
+  function closeRoguePick() {
+    var ov = $('ovRogue');
+    if (ov) ov.classList.add('hidden');
   }
 
   function joinRoom(code) {
@@ -493,6 +505,17 @@
     $('btnModeLocal').addEventListener('click', function () { startMode('local'); });
     $('btnModeAI').addEventListener('click', function () { startMode('ai'); });
     $('btnModeRogue').addEventListener('click', function () { startMode('rogue'); });
+
+    if ($('btnRogueAI')) $('btnRogueAI').addEventListener('click', function () {
+      closeRoguePick(); SET.save(settings); play({ mode: 'rogue', vs: 'ai' });
+    });
+    if ($('btnRogueHuman')) $('btnRogueHuman').addEventListener('click', function () {
+      closeRoguePick(); SET.save(settings); play({ mode: 'rogue', vs: 'human' });
+    });
+    if ($('btnRogueCancel')) $('btnRogueCancel').addEventListener('click', closeRoguePick);
+    if ($('ovRogue')) $('ovRogue').addEventListener('click', function (e) {
+      if (e.target === this) closeRoguePick();
+    });
     $('btnModeOnline').addEventListener('click', function () { startMode('online'); });
     $('btnModeTutorial').addEventListener('click', function () { startMode('tutorial'); });
 
