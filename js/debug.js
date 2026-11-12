@@ -20,6 +20,7 @@
   var root = null;
   var body = null;
   var statusEl = null;
+  var fab = null;
   var input = null;
   var out = null;
   var hist = [];
@@ -474,6 +475,19 @@
     out = root.querySelector('.dbg-out');
     input = root.querySelector('.dbg-in');
 
+    // 手机上没有 ` 和 F9，给一个悬浮按钮当入口
+    fab = document.createElement('button');
+    fab.type = 'button';
+    fab.className = 'dbg-fab';
+    fab.title = '调试台（` 或 F9）';
+    fab.textContent = '调试';
+    document.body.appendChild(fab);
+    fab.addEventListener('click', function (e) {
+      e.preventDefault();
+      e.stopPropagation();
+      toggle();
+    });
+
     root.querySelector('.dbg-close').addEventListener('click', function () { toggle(false); });
 
     root.addEventListener('click', function (e) {
@@ -507,6 +521,7 @@
     if (!root) build();
     open = next == null ? !open : !!next;
     root.classList.toggle('open', open);
+    if (fab) fab.classList.toggle('on', open);
     if (open) {
       render();
       if (statusEl && !lastMsg) say('选兵种后点棋盘放子；联机模式只读');
@@ -544,4 +559,11 @@
     toggle: function () { toggle(); },
     run: function (cmd) { if (!open) toggle(true); run(cmd); return out ? out.textContent : ''; }
   };
+  /* ---------------- 启动 ---------------- */
+  // 先把外壳和悬浮按钮建出来，手机上没有 ` / F9，靠这个按钮打开
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', build);
+  } else {
+    build();
+  }
 })();

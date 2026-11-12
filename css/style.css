@@ -1,4 +1,4 @@
-﻿/* =========================================================
+/* =========================================================
  * style.css —— 六角前线
  * ========================================================= */
 
@@ -1686,3 +1686,50 @@ input.num:focus {
 .perk-chips-head { color: #93a4b8; font-size: 11px; margin: 6px 0 3px; display: flex; align-items: center; gap: 6px; }
 .perk-chips-head em { font-style: normal; color: #fbbf24; }
 .perk-chip.empty { color: #536070; border-color: #22303f; }
+
+/* ============ 调试台：手机上的入口与布局 ============ */
+
+.dbg-fab {
+  display: none;                 /* 桌面有 ` 和 F9，只在窄屏露出来 */
+  position: fixed; right: 12px; bottom: 100px; z-index: 9997;
+  width: 52px; height: 34px; padding: 0; border-radius: 17px;
+  border: 1px solid rgba(45, 212, 191, .42); background: rgba(6, 14, 22, .9);
+  color: #7ff2e2; font: 600 12px/1 "Cascadia Mono", Consolas, "Courier New", monospace;
+  cursor: pointer; box-shadow: 0 8px 22px rgba(0, 0, 0, .5);
+  -webkit-tap-highlight-color: transparent; touch-action: manipulation;
+}
+.dbg-fab.on { background: rgba(45, 212, 191, .92); color: #04121a; border-color: rgba(45, 212, 191, .95); }
+
+@media (max-width: 720px) {
+  .dbg {
+    left: 8px; right: 8px; bottom: 8px; top: auto;
+    width: auto; max-width: none; max-height: 78vh;
+    border-radius: 14px;
+    font-size: 12px;
+  }
+  .dbg-body { max-height: 54vh; -webkit-overflow-scrolling: touch; }
+  .dbg-out { max-height: 24vh; -webkit-overflow-scrolling: touch; }
+  .dbg-types { grid-template-columns: repeat(3, 1fr); }
+  .dbg-types .dbg-type { padding: 7px 2px; }
+  .dbg-cards, .dbg-flags { gap: 5px; }
+  .dbg-cards .dbg-card { padding: 7px 6px; }
+  .dbg-fab { display: block; width: 56px; height: 36px; right: 10px; bottom: 150px; font-size: 12px; }
+}
+
+@media (max-width: 720px) and (max-height: 620px) {
+  .dbg-body { max-height: 46vh; }
+}
+/* ============ 手机上的能力卡弹窗 ============ */
+
+@media (max-width: 720px) {
+  .perk-modal { width: 96vw; max-height: 92vh; }
+  .perk-cards {
+    grid-template-columns: 1fr !important;
+    max-height: 58vh;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+  .perk-card { min-height: 0; padding: 12px 14px; }
+  .perk-card .perk-desc { -webkit-line-clamp: 3; }
+  .perk-actions { flex-wrap: wrap; }
+}

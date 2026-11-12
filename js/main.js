@@ -1835,7 +1835,7 @@ function placePending() {
   function startPromote() {
     var g = app.game, seat = seatNow();
     var pk = g.perksOf(seat);
-    if (!(pk.promoteLeft > 0)) { toast('没有可用的晋升次数'); return; }
+    if (!(pk.promoteLeft > 0)) { toast('没有可用的晋升次数'); cancelPerk(); return; }
     app.promoPick = null;
     app.promoDir = null;
     app.promoMode = true;
@@ -1846,6 +1846,7 @@ function placePending() {
 
   function pickPromoteTarget(cell) {
     var g = app.game, seat = seatNow();
+    if (!(g.perksOf(seat).promoteLeft > 0)) { toast('没有可用的晋升次数了'); cancelPerk(); return; }
     var p = g.pieceAt(cell.key);
     if (!p || p.owner !== seat || p.kind === 'base') { toast('要选自己的棋子'); return; }
     app.promoPick = cell.key;
@@ -1857,6 +1858,12 @@ function placePending() {
     var g = app.game, seat = seatNow();
     var cell = app.promoPick;
     var t = typesOf()[typeId] || {};
+    // 次数用完了就别再让玩家点下去（以前会卡在「必须选棋子」的状态里出不来）
+    if (!(g.perksOf(seat).promoteLeft > 0)) {
+      toast('没有可用的晋升次数了');
+      cancelPerk();
+      return;
+    }
     // 狙击兵是直线攻击，改造完还要给一个方向
     if (t.rangeMode === 'line' && (dir === undefined || dir === null)) {
       if (!cell) { toast('先点一个自己的棋子'); return; }
@@ -1870,12 +1877,22 @@ function placePending() {
     hidePerkBar();
     if (app.mode === 'online') {
       Net.act({ kind: 'promote', cell: cell, to: typeId, dir: (dir == null ? null : dir) });
+      // 联机由服务端算，这里先把选人状态收掉，想再改一个就再点一次「晋升」
+      cancelPerk();
       return;
     }
     var res = ROGUE.promote(g, seat, cell, typeId, (dir == null ? undefined : dir));
-    if (!res.ok) { toast(res.msg || '无法晋升'); refresh(); return; }
+    if (!res.ok) { toast(res.msg || '无法晋升'); cancelPerk(); return; }
     addLog(g.players[seat].name + ' 晋升 1 个棋子为 ' + (typesOf()[typeId] || {}).name, 'perk');
-    refresh();
+    // 还有次数就继续选下一个，没有了就把选人状态收起来
+    var left = g.perksOf(seat).promoteLeft;
+    if (left > 0) {
+      app.promoMode = true;
+      showPerkBar('晋升 ×' + left + '：点一个自己的棋子，再点下面的兵种卡' + cancelBtnHtml());
+      refresh();
+    } else {
+      cancelPerk();
+    }
   }
 
   // 面板里的「已获能力」小标签

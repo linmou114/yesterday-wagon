@@ -983,6 +983,11 @@
     if (this.rogue && pk.flags && pk.flags.recruit) {
       pk.freeDeploy.infantry = (Math.round(Number(pk.freeDeploy.infantry) || 0)) + 1;
     }
+    // 「晋升 / 战地晋升 / 火速提拔」都是本回合有效，回合结束就作废
+    if (this.rogue) {
+      this.perksOf(0).promoteLeft = 0;
+      this.perksOf(1).promoteLeft = 0;
+    }
     this.energy = this.turnEnergy();
     this.turnEnergyMax = this.energy;
     this.resolveCount = 0;
