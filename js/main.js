@@ -284,6 +284,14 @@
   function refresh() {
     var g = app.game;
     if (!g) return;
+    // 联机拿到「晋升」卡后，等服务端广播过来再进晋升流程
+    if (app.autoPromote) {
+      app.autoPromote = false;
+      var autoSeat = seatNow();
+      if (autoSeat >= 0 && g.rogue && g.perksOf(autoSeat).promoteLeft > 0 && !app.promoMode) {
+        startPromote();
+      }
+    }
     app.legal = g.over ? new Set() : g.legalCells(g.active);
     if (!g.over && app.selected === '__slave' && g.slaveCells) {
       app.legal = g.slaveCells(g.active);      // 奴隶只能放奴隶主周围
@@ -362,7 +370,7 @@
           '<div class="pips">' + pips + '</div>' +
           comp +
           perkChips(g, i) +
-          ((g.rogue && window.ROGUE && g.perksOf(i).promoteLeft > 0 && !g.over)
+          ((g.rogue && window.ROGUE && g.perksOf(i).promoteLeft > 0 && !g.over && i === seatNow())
             ? ('<button type="button" class="perk-promote" data-promote="1">晋升 ×' +
                 g.perksOf(i).promoteLeft + '</button>')
             : '') +
@@ -1759,6 +1767,8 @@ function placePending() {
     hidePerkBar();
     if (app.mode === 'online') {
       Net.act({ kind: 'perk', id: id, args: args || {} });
+      // 服务端回广播后由 refresh() 里的 autoPromote 接着进晋升流程
+      if (c.id === 'promote' || c.id === 'promote2' || c.id === 'promote3') app.autoPromote = true;
       return;
     }
     var res = ROGUE.pick(g, seat, id, args);
@@ -1766,6 +1776,11 @@ function placePending() {
     addLog(g.players[seat].name + ' 获得能力「' + c.name + '」', 'perk');
     toast('获得能力：' + c.name);
     refresh();
+    // 拿到晋升次数的卡，直接进入「点棋子 → 点兵种卡」的流程，别让玩家自己去找按钮
+    if (c.id === 'promote' || c.id === 'promote2' || c.id === 'promote3') {
+      startPromote();
+      return;
+    }
   }
 
   // 能力卡要求选目标时的点击处理
