@@ -548,16 +548,27 @@
   /* ---------------- 肉鸽卡牌用到的局面操作 ---------------- */
 
   // 晋升：把场上的一个棋子就地变成另一种兵种（数值按新兵种重置）
-  Game.prototype.transform = function (pieceId, typeId) {
+  Game.prototype.transform = function (pieceId, typeId, dir) {
     var p = this.pieces.get(pieceId);
     var t = this.types[typeId] || TYPES[typeId];
     if (!p || !t) return null;
+    var line = (t.rangeMode === 'line');
     p.kind = typeId;
     p.hp = t.hp;
     p.maxHp = t.hp;
     p.atk = t.atk;
     p.range = t.range;
-    p.dir = (t.rangeMode === 'line') ? (p.dir == null ? 0 : p.dir) : null;
+    // 直线攻击的兵种（狙击兵）要方向：传了就用传进来的，没传就沿用原来的方向
+    if (line) {
+      var d = Number(dir);
+      if (dir === undefined || dir === null || isNaN(d)) {
+        p.dir = (p.dir == null) ? 0 : p.dir;
+      } else {
+        p.dir = ((Math.round(d) % 6) + 6) % 6;
+      }
+    } else {
+      p.dir = null;
+    }
     p.shiftDir = null;
     return p;
   };

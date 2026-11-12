@@ -412,7 +412,7 @@
   }
 
   // 晋升：把某个己方棋子改成指定兵种，消耗一次额度
-  function promote(g, owner, cellKey, typeId) {
+  function promote(g, owner, cellKey, typeId, dir) {
     var pk = g.perksOf(owner);
     if (!g.rogue) return { ok: false, msg: '不是肉鸽模式' };
     if (g.active !== owner) return { ok: false, msg: '还没轮到你' };
@@ -420,9 +420,9 @@
     var p = g.pieceAt(cellKey);
     if (!p || p.owner !== owner || p.kind === 'base') return { ok: false, msg: '只能选择己方棋子' };
     if (!g.types[typeId] || typeId === 'slave') return { ok: false, msg: '不能改造成这个兵种' };
-    if (!g.transform(p.id, typeId)) return { ok: false, msg: '改造失败' };
+    if (!g.transform(p.id, typeId, dir)) return { ok: false, msg: '改造失败' };
     pk.promoteLeft -= 1;
-    g.history.push({ type: 'promote', owner: owner, key: cellKey, to: typeId, turn: g.turn });
+    g.history.push({ type: 'promote', owner: owner, key: cellKey, to: typeId, dir: (p.dir == null ? null : p.dir), turn: g.turn });
     return { ok: true, msg: '', piece: p };
   }
 

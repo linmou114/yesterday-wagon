@@ -1826,6 +1826,7 @@ function placePending() {
     app.perkMode = null;
     app.promoMode = false;
     app.promoPick = null;
+    app.promoDir = null;
     hidePerkBar();
     refresh();
   }
@@ -1836,6 +1837,7 @@ function placePending() {
     var pk = g.perksOf(seat);
     if (!(pk.promoteLeft > 0)) { toast('没有可用的晋升次数'); return; }
     app.promoPick = null;
+    app.promoDir = null;
     app.promoMode = true;
     app.perkMode = null;
     showPerkBar('晋升 ×' + pk.promoteLeft + '：先点一个自己的棋子，再点下面的兵种卡' + cancelBtnHtml());
@@ -1851,13 +1853,26 @@ function placePending() {
     refresh();
   }
 
-  function commitPromote(typeId) {
+  function commitPromote(typeId, dir) {
     var g = app.game, seat = seatNow();
     var cell = app.promoPick;
+    var t = typesOf()[typeId] || {};
+    // 狙击兵是直线攻击，改造完还要给一个方向
+    if (t.rangeMode === 'line' && (dir === undefined || dir === null)) {
+      if (!cell) { toast('先点一个自己的棋子'); return; }
+      app.promoDir = { cell: cell, type: typeId };
+      showPerkBar('改成「' + escHtml(t.name) + '」后朝哪个方向打？' + dirBtnHtml() + cancelBtnHtml());
+      refresh();
+      return;
+    }
+    app.promoDir = null;
     app.promoPick = null;
     hidePerkBar();
-    if (app.mode === 'online') { Net.act({ kind: 'promote', cell: cell, to: typeId }); return; }
-    var res = ROGUE.promote(g, seat, cell, typeId);
+    if (app.mode === 'online') {
+      Net.act({ kind: 'promote', cell: cell, to: typeId, dir: (dir == null ? null : dir) });
+      return;
+    }
+    var res = ROGUE.promote(g, seat, cell, typeId, (dir == null ? undefined : dir));
     if (!res.ok) { toast(res.msg || '无法晋升'); refresh(); return; }
     addLog(g.players[seat].name + ' 晋升 1 个棋子为 ' + (typesOf()[typeId] || {}).name, 'perk');
     refresh();
@@ -2002,6 +2017,10 @@ function placePending() {
       var d = t.closest ? t.closest('[data-dir]') : null;
       if (d && app.perkMode && app.perkMode.stage === 1) {
         commitPerk(app.perkMode.id, { key: app.perkMode.key, dir: Number(d.getAttribute('data-dir')) });
+        return;
+      }
+      if (d && app.promoDir) {
+        commitPromote(app.promoDir.type, Number(d.getAttribute('data-dir')));
       }
     });
     document.addEventListener('click', function (e) {

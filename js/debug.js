@@ -423,10 +423,11 @@
       var g = G();
       var pk = g.perksOf(g.active);
       if (!(pk.promoteLeft > 0)) pk.promoteLeft = 1;
-      var r = window.ROGUE.promote(g, g.active, p.key, id);
+      var dir = (parts[2] == null) ? undefined : Number(parts[2]);
+      var r = window.ROGUE.promote(g, g.active, p.key, id, dir);
       refresh(); render();
       if (!r.ok) throw new Error(r.msg);
-      print(p.key + ' → ' + id);
+      print(p.key + ' → ' + id + (r.piece.dir == null ? '' : (' · 方向 ' + r.piece.dir)));
     },
     flag: function (arg) {
       var g = G();

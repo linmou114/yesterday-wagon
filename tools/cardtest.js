@@ -501,6 +501,25 @@ t('通用 · 不是肉鸽模式时不能选卡', () => {
   return '返回「' + r.msg + '」';
 });
 
+t('晋升 · 改成狙击兵要带方向，改别的兵种不留方向', () => {
+  const g = mk();
+  g.energy = 5;
+  g.perks[0].promoteLeft = 2;
+  const cells = Array.from(g.legalCells(0));
+  const key = cells[0];
+  g.place(0, 'infantry', key);
+  const id = Array.from(g.pieces.values()).find((p) => p.owner === 0 && p.kind === 'infantry').id;
+  const r = ROGUE.promote(g, 0, key, 'sniper', 3);
+  ok(r.ok, '晋升成功');
+  eq(g.pieces.get(id).dir, 3, '狙击兵记住方向 3');
+  const hit3 = Array.from(g.attackCells(g.pieces.get(id)));
+  ok(hit3.length > 0, '朝左能打到东西（' + hit3.join(' ') + '）');
+  const r2 = ROGUE.promote(g, 0, key, 'artillery', 3);
+  ok(r2.ok, '再改成炮兵');
+  eq(g.pieces.get(id).dir, null, '非直线兵种没有方向');
+  return '狙击兵 dir=3 打到 ' + hit3.length + ' 格；炮兵 dir=null';
+});
+
 t('免费券 · 天降奇兵的免费部署不扣费、用一次就没了', () => {
   const g = mk();
   g.energy = 0;                        // 关键：一点费用都没有，免费券也能用

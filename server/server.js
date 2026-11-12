@@ -653,9 +653,14 @@ function doAct(ws, msg) {
     event = { kind: 'perkSkip', owner: seat };
   } else if (action.kind === 'promote') {
     if (!g.rogue) return send(ws, { t: 'err', msg: '不是肉鸽模式' });
-    const res = ROGUE.promote(g, seat, String(action.cell || ''), String(action.to || ''));
+    const to = String(action.to || '');
+    const dir = (action.dir === undefined || action.dir === null || action.dir === '') ? undefined : Number(action.dir);
+    const res = ROGUE.promote(g, seat, String(action.cell || ''), to, dir);
     if (!res.ok) return send(ws, { t: 'err', msg: res.msg || '无法晋升' });
-    event = { kind: 'promote', owner: seat, cell: String(action.cell || ''), to: String(action.to || '') };
+    event = {
+      kind: 'promote', owner: seat, cell: String(action.cell || ''), to: to,
+      dir: (res.piece && res.piece.dir != null) ? res.piece.dir : null
+    };
   } else {
     return send(ws, { t: 'err', msg: '未知操作' });
   }
