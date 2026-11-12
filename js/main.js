@@ -663,6 +663,7 @@ function placePending() {
     var pend = app.pending;
     if (!g || !pend) return;
     app.pending = null;
+    app.pendingReplace = null;   // 替换（狙击兵）走完这条流程就结束，别留下二次替换
 
     if (app.mode === 'online') {
       Net.act({ kind: 'place', type: pend.type, cell: pend.cell, dir: pend.dir });
@@ -791,8 +792,9 @@ function placePending() {
         cell: cellKey, type: t.id || app.selected,
         dir: opts.dir, len: t.range, owner: g.active
       };
+      app.pendingReplace = null;   // 已经转成「落点+方向」流程，别再留着待替换标记
       app.inspect = null;
-      toast('选择狙击方向，再点一下确认替换');
+      toast('拖动或用指针选狙击方向，点别的格子确认替换（点这个格子取消）');
       refresh();
       return;
     }
