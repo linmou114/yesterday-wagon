@@ -273,6 +273,8 @@
 
   function updateSummary() {
     if (!settings) return;
+    var host = $('menuSummary');
+    if (!host) return;                 // 开始界面已精简，不再显示这排摘要
     var isDefault = settings.mapMode === 'default';
     var idx = clampInt(settings.defaultMap, 0, DEFAULT_MAPS.length - 1, 0);
     var dm = DEFAULT_MAPS[idx];
@@ -288,7 +290,7 @@
       ? '<span class="hi">地图 ' + (idx + 1) + '「' + dm.name + '」</span>'
       : '<span>随机地图</span>';
 
-    $('menuSummary').innerHTML =
+    host.innerHTML =
       mapChip +
       '<span>边长 ' + side + ' · ' + Hex.cellCount(side) + ' 格</span>' +
       '<span>障碍 ' + dl + '</span>' +
