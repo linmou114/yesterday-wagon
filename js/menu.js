@@ -335,6 +335,7 @@
 
   function renderModList() {
     var host = $('modList');
+    if (!host) return;                      // 工坊已暂停时这里没有节点
     if (!host) return;
     var list = allAvailableMods();
     var picks = MODS.picks();
@@ -361,6 +362,7 @@
 
   function refreshRemoteMods() {
     if (!MODS) return;
+    if (!MODS.enabled || !MODS.enabled()) return;   // 工坊已暂停：不请求服务器列表
     return MODS.listRemote().then(function (list) {
       remoteMods = (list || []).map(function (m) { return Object.assign({}, m, { remote: true }); });
       MODS.cacheRemote(remoteMods);      // 缓存下来，对局页才能用

@@ -68,6 +68,23 @@ const server = http.createServer((req, res) => {
     return res.end(JSON.stringify({ rooms: playing, waiting, players }));
   }
   // ---- 自建兵种 API ----
+  // 为了配合内容审核，玩家自建内容（UGC）整体暂停：列表返回空、上传与删除一律拒绝。
+  // 重新开放时把 MODS_ENABLED 改成 true（或用环境变量 MODS_ENABLED=1 启动）。
+  if (!MODS_ENABLED && pathname.indexOf('/api/mods') === 0) {
+    res.writeHead(req.method === 'GET' ? 200 : 403, {
+      'content-type': 'application/json; charset=utf-8',
+      'cache-control': 'no-store',
+      'access-control-allow-origin': '*'
+    });
+    if (req.method === 'GET' && pathname === '/api/mods') {
+      return res.end(JSON.stringify({ mods: [], disabled: true }));
+    }
+    if (req.method === 'GET') {
+      return res.end(JSON.stringify({ used: 0, limit: 0, disabled: true }));
+    }
+    return res.end(JSON.stringify({ error: '自建兵种功能已暂停' }));
+  }
+
   if (pathname === '/api/mods' && req.method === 'GET') {
     const list = Array.from(modStore.values())
       .sort((a, b) => (b.at || 0) - (a.at || 0))
@@ -202,7 +219,11 @@ const rooms = new Map();          // code -> room
 const MOD_FILE = path.join(__dirname, '..', 'data', 'mods.json');
 const MOD_MAX = 200;
 const MOD_FREE_LIMIT = 4;          // 不填秘钥时每个用户最多上传几个
-const MOD_KEY = 'mrfz';            // 填了这个秘钥就不限数量
+const MOD_KEY = process.env.MOD_KEY || 'mrfz';   // 填了这个秘钥就不限数量
+
+// 自建兵种（UGC）总开关：默认关闭（配合内容审核）。
+// 重新开放：环境变量 MODS_ENABLED=1 启动，或把下面这行改成 true。
+const MODS_ENABLED = process.env.MODS_ENABLED === '1';
 
 const modStore = new Map();
 

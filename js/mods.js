@@ -1,4 +1,4 @@
-﻿/* =========================================================
+/* =========================================================
  * mods.js —— 自建兵种（mod）的公共逻辑
  *
  *   · 定义校验与归一化
@@ -13,6 +13,10 @@
   var STORE_KEY = 'yesterday-bus.mods.v1';   // 我发布/收藏过的定义 + secret
   var PICK_KEY = 'yesterday-bus.modpick.v1'; // 启用了哪些
   var REMOTE_KEY = 'yesterday-bus.modremote.v1'; // 从服务器拉到的定义缓存（不含 secret）
+
+  // 自建兵种（UGC）暂停开关：为了配合内容审核，整条链路都关掉。
+  // 重新开放时把它改回 true，并同步 server/server.js 的 MODS_ENABLED。
+  var MODS_OPEN = false;
 
   var MAX_NAME = 10;
   var MAX_DESC = 120;
@@ -156,6 +160,7 @@
 
   // 当前启用的定义（本地 + 服务器缓存都能用）
   function enabledDefs() {
+    if (!MODS_OPEN) return [];
     var all = allDefs();
     var p = picks();
     var out = [];
@@ -178,6 +183,7 @@
   }
 
   function listRemote() {
+    if (!MODS_OPEN) return Promise.resolve([]);
     var url = apiUrl('/api/mods');
     if (!url) return Promise.resolve([]);
     return fetch(url, { cache: 'no-store' })
@@ -199,6 +205,7 @@
   }
 
   function quota() {
+    if (!MODS_OPEN) return Promise.resolve({ used: 0, limit: 0, closed: true });
     var url = apiUrl('/api/mods/quota?client=' + encodeURIComponent(clientId()));
     if (!url) return Promise.resolve({ used: 0, limit: 4 });
     return fetch(url, { cache: 'no-store' })
@@ -207,6 +214,7 @@
   }
 
   function publish(def, key) {
+    if (!MODS_OPEN) return Promise.reject(new Error('自建兵种功能已暂停'));
     var url = apiUrl('/api/mods');
     if (!url) return Promise.reject(new Error('这个页面不是从服务器打开的，无法上传'));
     var body = JSON.stringify({
@@ -227,6 +235,7 @@
   }
 
   function removeRemote(id, secret) {
+    if (!MODS_OPEN) return Promise.reject(new Error('自建兵种功能已暂停'));
     var url = apiUrl('/api/mods/' + encodeURIComponent(id));
     if (!url) return Promise.reject(new Error('离线状态'));
     return fetch(url, {
@@ -257,6 +266,7 @@
     AURA_EFFECTS: AURA_EFFECTS,
     AURA_LABEL: AURA_LABEL,
     auraText: auraText,
+    enabled: function () { return MODS_OPEN; },
     MAX_NAME: MAX_NAME,
     MAX_DESC: MAX_DESC,
     MAX_MODS: MAX_MODS,

@@ -1,4 +1,4 @@
-﻿/* 联机服务端自检：起一个真服务器，用两个 WebSocket 客户端打一场 */
+/* 联机服务端自检：起一个真服务器，用两个 WebSocket 客户端打一场 */
 'use strict';
 
 const { spawn } = require('child_process');
@@ -231,45 +231,66 @@ function send(ws, msg) { ws.send(JSON.stringify(msg)); }
     a3.close();
     b3.close();
 
-    console.log('== 新兵种协议 ==');
+    console.log('== 自建兵种接口 ==');
     {
-      // 只做不需要新建连接的校验：服务端设置里必须认识全部内置兵种
+      // 服务端有个总开关：关闭时（默认）列表为空、上传/删除一律 403
       const r = await fetch(BASE + '/api/mods');
       const j = await r.json();
       ok(Array.isArray(j.mods), '/api/mods 返回兵种数组');
-      const bad = await fetch(BASE + '/api/mods', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ mod: { name: '' } })
-      });
-      ok(bad.status === 400, '空名字的兵种被拒绝');
+      const closed = j.disabled === true;
+      if (closed) {
+        ok(j.mods.length === 0, '关闭时列表为空');
+        const post = await fetch(BASE + '/api/mods', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ mod: { name: '测试', glyph: '测', hp: 3, atk: 1, range: 1, cost: 1, rangeMode: 'circle' } })
+        });
+        ok(post.status === 403, '关闭时上传被拒绝（403）');
+        const del = await fetch(BASE + '/api/mods/mod_deadbeef00', {
+          method: 'DELETE', headers: { 'x-mod-secret': 'x' }
+        });
+        ok(del.status === 403, '关闭时删除被拒绝（403）');
+        const q = await (await fetch(BASE + '/api/mods/quota?client=ntprobe1234')).json();
+        ok(q.used === 0 && q.limit === 0, '关闭时额度为 0');
+      } else {
+        const bad = await fetch(BASE + '/api/mods', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ mod: { name: '' } })
+        });
+        ok(bad.status === 400, '空名字的兵种被拒绝');
+      }
     }
     console.log('== 上传额度 ==');
     {
-      const client = 'nt' + Date.now().toString(36);
-      const mk = (i, key) => JSON.stringify({
-        mod: { name: '测试' + i, glyph: '测', hp: 3, atk: 1, range: 1, cost: 1, rangeMode: 'circle' },
-        client, key: key || ''
-      });
-      const made = [];
-      for (let i = 1; i <= 4; i++) {
-        const r = await fetch(BASE + '/api/mods', { method: 'POST', headers: { 'content-type': 'application/json' }, body: mk(i) });
-        const j = await r.json();
-        if (r.ok) made.push(j.mod.id + ':' + j.secret);
-      }
-      ok(made.length === 4, '不填秘钥可以上传 4 个');
-      const fifth = await fetch(BASE + '/api/mods', { method: 'POST', headers: { 'content-type': 'application/json' }, body: mk(5) });
-      ok(fifth.status === 429, '第 5 个被拒绝（429）');
-      const q = await (await fetch(BASE + '/api/mods/quota?client=' + client)).json();
-      ok(q.used === 4 && q.limit === 4, '额度接口返回 4/4');
-      const withKey = await fetch(BASE + '/api/mods', { method: 'POST', headers: { 'content-type': 'application/json' }, body: mk(5, 'mrfz') });
-      ok(withKey.status === 200, '填秘钥后可以继续上传');
-      // 清理
-      for (const pair of made) {
-        const idx = pair.indexOf(':');
-        await fetch(BASE + '/api/mods/' + pair.slice(0, idx), {
-          method: 'DELETE', headers: { 'x-mod-secret': pair.slice(idx + 1) }
+      const probe = await (await fetch(BASE + '/api/mods')).json();
+      if (probe.disabled === true) {
+        ok(true, 'UGC 已关闭，跳过额度用例');
+      } else {
+        const client = 'nt' + Date.now().toString(36);
+        const mk = (i, key) => JSON.stringify({
+          mod: { name: '测试' + i, glyph: '测', hp: 3, atk: 1, range: 1, cost: 1, rangeMode: 'circle' },
+          client, key: key || ''
         });
+        const made = [];
+        for (let i = 1; i <= 4; i++) {
+          const r = await fetch(BASE + '/api/mods', { method: 'POST', headers: { 'content-type': 'application/json' }, body: mk(i) });
+          const j = await r.json();
+          if (r.ok) made.push(j.mod.id + ':' + j.secret);
+        }
+        ok(made.length === 4, '不填秘钥可以上传 4 个');
+        const fifth = await fetch(BASE + '/api/mods', { method: 'POST', headers: { 'content-type': 'application/json' }, body: mk(5) });
+        ok(fifth.status === 429, '第 5 个被拒绝（429）');
+        const q = await (await fetch(BASE + '/api/mods/quota?client=' + client)).json();
+        ok(q.used === 4 && q.limit === 4, '额度接口返回 4/4');
+        const withKey = await fetch(BASE + '/api/mods', { method: 'POST', headers: { 'content-type': 'application/json' }, body: mk(5, process.env.MOD_KEY || 'mrfz') });
+        ok(withKey.status === 200, '填秘钥后可以继续上传');
+        for (const pair of made) {
+          const idx = pair.indexOf(':');
+          await fetch(BASE + '/api/mods/' + pair.slice(0, idx), {
+            method: 'DELETE', headers: { 'x-mod-secret': pair.slice(idx + 1) }
+          });
+        }
       }
     }
     console.log('== 房间生命周期 ==');
