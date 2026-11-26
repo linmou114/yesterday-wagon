@@ -1796,3 +1796,15 @@ input.num:focus {
   margin-top: 34px; padding-top: 14px; border-top: 1px solid #22303F;
   font-size: 11.5px; color: #6B7C91;
 }
+/* 长文页面（隐私说明等）：允许整页滚动，避免被 html/body 的 overflow:hidden 截断 */
+html.legal, html.legal body {
+  height: auto;
+  min-height: 100%;
+  overflow: visible;
+}
+html.legal body.page-legal {
+  display: block;
+  background:
+    radial-gradient(900px 520px at 50% -10%, rgba(45, 212, 191, 0.10), transparent 70%),
+    #070b12;
+}
