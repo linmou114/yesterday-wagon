@@ -40,6 +40,7 @@ npm start            # = node server/server.js，默认 http://localhost:3000
 昨日圆车/
 ├─ index.html          开始菜单页（模式选择 / 设置 / 规则）
 ├─ game.html           对局页（棋盘 + 双方面板 + 操作区）
+├─ privacy.html        隐私与免责说明（备案用长文页）
 ├─ css/style.css       全部样式（深色主题 + 响应式）
 ├─ js/hex.js           六边形网格数学（浏览器/Node 双用）
 ├─ js/engine.js        规则引擎（浏览器/Node 双用，唯一真相来源）
@@ -52,7 +53,11 @@ npm start            # = node server/server.js，默认 http://localhost:3000
 ├─ js/menu.js          菜单页交互（设置表单、地图预览、跳转）
 ├─ js/renderer.js      Canvas 绘制层
 ├─ js/main.js          对局页交互（四种模式的调度都在这里）
+├─ js/debug.js         页面内调试台（桌面 ` / F9，手机右下角「调试」）
 ├─ server/server.js    联机服务端（静态托管 + WebSocket 房间）
+├─ deploy-server.sh    首次部署脚本
+├─ update-server.sh    更新脚本（保留 node_modules）
+├─ switch-port.sh      切端口脚本（备案后用 80）
 ├─ package.json        依赖与 start 脚本
 ├─ render.yaml         Render 一键部署配置
 ├─ tools/              自检与截图脚本（不参与线上运行）
@@ -237,6 +242,37 @@ PORT=8080 bash deploy-server.sh
 ```
 
 （记得同步在控制台放行新端口）
+
+### 切到 80 端口（备案通过后用域名访问）
+
+ICP 备案下来后，审查和日常访问都应该是 `http://yesterday-wagon.xyz`（**不带端口**），
+所以把服务从 3000 挪到 80：
+
+```bash
+cd /root/yesterday-wagon
+bash switch-port.sh          # 切到 80
+bash switch-port.sh 3000     # 想切回去
+```
+
+脚本只写一个 systemd drop-in（`/etc/systemd/system/yesterday-wagon.service.d/port.conf`，
+内容 `Environment=PORT=80`），然后 `daemon-reload` + `restart`，最后用 `/health` 自检；
+不动主 unit，也不动代码——前端 WebSocket 地址是按 `location.host` 现算的（`js/net.js:20`），
+换成 80 或以后挂 HTTPS 都不用改。
+
+切之前确认两件事：
+
+1. 阿里云控制台 → 轻量应用服务器 → **防火墙** → 放行 `TCP:80`（443 后面挂 HTTPS 再放行）。
+2. 域名 A 记录已指向本机 IP（`nslookup yesterday-wagon.xyz` 应返回服务器公网 IP）。
+
+切完自检：
+
+```bash
+curl -s -o /dev/null -w '%{http_code}\n' http://yesterday-wagon.xyz/        # 期望 200
+curl -s -o /dev/null -w '%{http_code}\n' http://yesterday-wagon.xyz/health  # 期望 200
+```
+
+> 如果 80 返回的是阿里云的「未备案/备案中」拦截页，说明备案数据还没同步到接入商，
+> 等 1~2 小时再试；`IP:3000` 一直可用，只是不适合写进备案材料。
 
 ---
 ## 7. 部署到 Render（免费托管）
